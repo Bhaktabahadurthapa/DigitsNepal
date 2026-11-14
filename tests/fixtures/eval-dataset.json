@@ -1,0 +1,1283 @@
+{
+  "version": 1,
+  "description": "DigitsNepal Nepali-English evaluation set. References are human-written, one acceptable rendering each; judge semantically.",
+  "cases": [
+    {
+      "id": "ever-01",
+      "category": "everyday",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Timi kasto chau?",
+      "reference": "How are you?",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "ever-02",
+      "category": "everyday",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Malai bhok lagyo.",
+      "reference": "I'm hungry.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "ever-03",
+      "category": "everyday",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Aaja dherai jado cha.",
+      "reference": "It's very cold today.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "ever-04",
+      "category": "everyday",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Ma bholi ghar janchu.",
+      "reference": "I will go home tomorrow.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "ever-05",
+      "category": "everyday",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Khana khayau?",
+      "reference": "Have you eaten?",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "Common greeting; literal 'did you eat food?'"
+    },
+    {
+      "id": "ever-06",
+      "category": "everyday",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Malai thaha chaina.",
+      "reference": "I don't know.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "ever-07",
+      "category": "everyday",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Ali bistarai bolnus na.",
+      "reference": "Please speak a little more slowly.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "'na' softens the request"
+    },
+    {
+      "id": "ever-08",
+      "category": "everyday",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Tapai kaha basnuhuncha?",
+      "reference": "Where do you live?",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "Respectful register"
+    },
+    {
+      "id": "ever-09",
+      "category": "everyday",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Hijo pani pani paryo.",
+      "reference": "It rained yesterday too.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "First 'pani' = also, second 'pani' = water/rain; tests ambiguity"
+    },
+    {
+      "id": "ever-10",
+      "category": "everyday",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Mero phone ko battery sakiyo.",
+      "reference": "My phone's battery has run out.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "ever-11",
+      "category": "everyday",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Ekchin parkhanus, ma aaudai chu.",
+      "reference": "Please wait a moment, I'm coming.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "ever-12",
+      "category": "everyday",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Yo kati ho?",
+      "reference": "How much is this?",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "ever-13",
+      "category": "everyday",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Dhanyabad, dherai sahayog garnu bhayo.",
+      "reference": "Thank you, you helped a lot.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "ever-14",
+      "category": "everyday",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Bus chuttyo, tyesaile dhilo bhayo.",
+      "reference": "I missed the bus, so I was late.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "ever-15",
+      "category": "everyday",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Ama lai fon garna birse.",
+      "reference": "I forgot to call Mom.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "work-01",
+      "category": "workplace",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Maile hijo meeting ma technical problem ko barema kura gareko thiye tara solution clear bhayena.",
+      "reference": "I discussed the technical problem during yesterday's meeting, but the solution was not clear.",
+      "must_keep": [
+        "meeting"
+      ],
+      "must_negate": true,
+      "notes": "Primary acceptance case"
+    },
+    {
+      "id": "work-02",
+      "category": "workplace",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Maile aja project ko update pathauna sakina.",
+      "reference": "I couldn't send the project update today.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "work-03",
+      "category": "workplace",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Bholi ko meeting 10 baje bata suru huncha.",
+      "reference": "Tomorrow's meeting starts at 10 o'clock.",
+      "must_keep": [
+        "10"
+      ],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "work-04",
+      "category": "workplace",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Report Friday samma submit garnu parcha.",
+      "reference": "The report has to be submitted by Friday.",
+      "must_keep": [
+        "Friday"
+      ],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "work-05",
+      "category": "workplace",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Manager le budget approve garnu bhayena.",
+      "reference": "The manager did not approve the budget.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "work-06",
+      "category": "workplace",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Ma aaja work from home garchu.",
+      "reference": "I'll work from home today.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "work-07",
+      "category": "workplace",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Client sanga call ma kura bhayo, uniharu khusi chan.",
+      "reference": "We talked with the client on the call; they are happy.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "work-08",
+      "category": "workplace",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Deadline ali extend garna milcha?",
+      "reference": "Could the deadline be extended a little?",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "work-09",
+      "category": "workplace",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Team ko sabai jana lai email pathaidinus.",
+      "reference": "Please send the email to everyone on the team.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "work-10",
+      "category": "workplace",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Maile tapai ko feedback anusar changes gareko chu.",
+      "reference": "I have made the changes according to your feedback.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "work-11",
+      "category": "workplace",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Aaja ma bimar chu, office aauna sakdina.",
+      "reference": "I'm sick today and can't come to the office.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "work-12",
+      "category": "workplace",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Invoice ma galti cha jasto lagcha.",
+      "reference": "It seems there is a mistake in the invoice.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "Keep hedge 'seems'"
+    },
+    {
+      "id": "work-13",
+      "category": "workplace",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Hami next week bata naya process follow garchau.",
+      "reference": "We will follow the new process from next week.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "work-14",
+      "category": "workplace",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Interview kasto bhayo? Result kahile aaucha?",
+      "reference": "How did the interview go? When will the result come?",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "work-15",
+      "category": "workplace",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Sayad bholi samma kaam sakincha.",
+      "reference": "The work will probably be finished by tomorrow.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "'sayad' = maybe/probably; must keep uncertainty"
+    },
+    {
+      "id": "tech-01",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Maile Kubernetes cluster deploy gare.",
+      "reference": "I deployed the Kubernetes cluster.",
+      "must_keep": [
+        "Kubernetes"
+      ],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "tech-02",
+      "category": "technical",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Yo error kina aayo?",
+      "reference": "Why did this error occur?",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "tech-03",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Deployment complete bhayo tara pods ready chainan.",
+      "reference": "The deployment completed, but the pods are not ready.",
+      "must_keep": [
+        "pods"
+      ],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "tech-04",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "AWS ma EC2 instance start bhayena.",
+      "reference": "The EC2 instance did not start on AWS.",
+      "must_keep": [
+        "AWS",
+        "EC2"
+      ],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "tech-05",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Database connection timeout bhairacha.",
+      "reference": "The database connection keeps timing out.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "'bhairacha' = continuous/repeated"
+    },
+    {
+      "id": "tech-06",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Login garda 500 error aaucha.",
+      "reference": "A 500 error appears when logging in.",
+      "must_keep": [
+        "500"
+      ],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "tech-07",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Maile bug fix gareko chu, PR review garidinus.",
+      "reference": "I have fixed the bug; please review the PR.",
+      "must_keep": [
+        "PR"
+      ],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "tech-08",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Production ma rollback garnu paryo.",
+      "reference": "We had to roll back in production.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "tech-09",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Docker image build garda dependency missing bhanyo.",
+      "reference": "When building the Docker image, it said a dependency is missing.",
+      "must_keep": [
+        "Docker"
+      ],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "tech-10",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Yo API le JSON response didaina.",
+      "reference": "This API does not return a JSON response.",
+      "must_keep": [
+        "API",
+        "JSON"
+      ],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "tech-11",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "CI pipeline feri fail bhayo.",
+      "reference": "The CI pipeline failed again.",
+      "must_keep": [
+        "CI"
+      ],
+      "must_negate": true,
+      "notes": "'fail' expresses negative outcome"
+    },
+    {
+      "id": "tech-12",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Terraform apply garnu agadi plan check garnus.",
+      "reference": "Check the plan before running terraform apply.",
+      "must_keep": [
+        "Terraform",
+        "apply",
+        "plan"
+      ],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "tech-13",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Memory usage 90 percent bhanda mathi gayo.",
+      "reference": "Memory usage went above 90 percent.",
+      "must_keep": [
+        "90"
+      ],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "tech-14",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Yo function le null return garcha kahile kahi.",
+      "reference": "This function sometimes returns null.",
+      "must_keep": [
+        "null"
+      ],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "tech-15",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "kubectl get pods chalauda kehi pani dekhaudaina.",
+      "reference": "Running kubectl get pods shows nothing.",
+      "must_keep": [
+        "kubectl get pods"
+      ],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "tech-16",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Staging environment ma test garera matra merge garnus.",
+      "reference": "Only merge after testing in the staging environment.",
+      "must_keep": [
+        "Staging"
+      ],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "tech-17",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "S3 bucket ko permission public chaina ni?",
+      "reference": "The S3 bucket's permissions aren't public, right?",
+      "must_keep": [
+        "S3"
+      ],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "tech-18",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Load balancer le traffic distribute gardaina jasto cha.",
+      "reference": "It seems the load balancer is not distributing traffic.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": "Keep hedge"
+    },
+    {
+      "id": "tech-19",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Git conflict resolve garna sakina, help garnus.",
+      "reference": "I couldn't resolve the Git conflict; please help.",
+      "must_keep": [
+        "Git"
+      ],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "tech-20",
+      "category": "technical",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Yo version 2.3.1 ma bug cha, 2.3.0 ma thiyena.",
+      "reference": "There is a bug in version 2.3.1; it wasn't in 2.3.0.",
+      "must_keep": [
+        "2.3.1",
+        "2.3.0"
+      ],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "supp-01",
+      "category": "support",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Mero account login hudaina, password reset garna milcha?",
+      "reference": "I can't log in to my account; can I reset my password?",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "supp-02",
+      "category": "support",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Order gareko tin din bhayo tara ajhai deliver bhayena.",
+      "reference": "It has been three days since I ordered, but it still hasn't been delivered.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "supp-03",
+      "category": "support",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Refund kahile samma aaucha?",
+      "reference": "By when will the refund arrive?",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "supp-04",
+      "category": "support",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "App update gare pachi crash bhairacha.",
+      "reference": "The app keeps crashing after I updated it.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "supp-05",
+      "category": "support",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Hamro team le tapai ko issue herdai cha, chadai jankari dinchhau.",
+      "reference": "Our team is looking into your issue; we will update you soon.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "acad-01",
+      "category": "academic",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Mero assignment ko deadline bholi ho.",
+      "reference": "My assignment's deadline is tomorrow.",
+      "must_keep": [
+        "assignment"
+      ],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "acad-02",
+      "category": "academic",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Yo research le climate change ko asar Nepal ma dekhaucha.",
+      "reference": "This research shows the impact of climate change in Nepal.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "acad-03",
+      "category": "academic",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Maile literature review ko pahilo draft lekhe.",
+      "reference": "I wrote the first draft of the literature review.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "acad-04",
+      "category": "academic",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Data ali kam bhayeko le result pakka bhanna sakidaina.",
+      "reference": "Because the data is limited, the result cannot be stated with certainty.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": "Must not strengthen the claim"
+    },
+    {
+      "id": "acad-05",
+      "category": "academic",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Professor le thesis ko methodology change garna bhannu bhayo.",
+      "reference": "The professor told me to change the thesis methodology.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "acad-06",
+      "category": "academic",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Survey ma 120 jana le bhag line.",
+      "reference": "120 people took part in the survey.",
+      "must_keep": [
+        "120"
+      ],
+      "must_negate": false,
+      "notes": "'line' here = took (part); ambiguous with English 'line'"
+    },
+    {
+      "id": "acad-07",
+      "category": "academic",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Yo nishkarsha sabai paristhiti ma lagu nahuna sakcha.",
+      "reference": "This conclusion may not apply in all situations.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "acad-08",
+      "category": "academic",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Class ma presentation dina dar lagcha.",
+      "reference": "I'm nervous about giving presentations in class.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "info-01",
+      "category": "informal",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "K cha bro?",
+      "reference": "What's up, bro?",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "info-02",
+      "category": "informal",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Ekdam ramro bhayo yaar!",
+      "reference": "That was really great, man!",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "info-03",
+      "category": "informal",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Malai ta jhyau lagyo.",
+      "reference": "I got really bored.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "'jhyau' = boredom/annoyance"
+    },
+    {
+      "id": "info-04",
+      "category": "informal",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Ke garne, yestai ho life.",
+      "reference": "What can you do, that's life.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "info-05",
+      "category": "informal",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Oe, kata hidis?",
+      "reference": "Hey, where did you go?",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "Very informal (ta-form)"
+    },
+    {
+      "id": "info-06",
+      "category": "informal",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Sachchi? Pakka ho?",
+      "reference": "Really? Are you sure?",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "info-07",
+      "category": "informal",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Thik cha, pachi bhetaula.",
+      "reference": "Okay, see you later.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "info-08",
+      "category": "informal",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Tyo movie ta bakwas rahecha.",
+      "reference": "That movie turned out to be rubbish.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "'rahecha' = discovered/turned out"
+    },
+    {
+      "id": "info-09",
+      "category": "informal",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "La la, chhito aija.",
+      "reference": "Okay okay, come quickly.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "info-10",
+      "category": "informal",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Malai yo kura man pardaina.",
+      "reference": "I don't like this.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "deva-01",
+      "category": "devanagari",
+      "expected_language": "native_nepali",
+      "mode": "accurate",
+      "source": "मैले हिजो मिटिङमा प्राविधिक समस्याको बारेमा कुरा गरेको थिएँ, तर समाधान स्पष्ट भएन।",
+      "reference": "I discussed the technical problem during yesterday's meeting, but the solution was not clear.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "deva-02",
+      "category": "devanagari",
+      "expected_language": "native_nepali",
+      "mode": "accurate",
+      "source": "तपाईंलाई कस्तो छ?",
+      "reference": "How are you?",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "deva-03",
+      "category": "devanagari",
+      "expected_language": "native_nepali",
+      "mode": "accurate",
+      "source": "म भोलि काठमाडौं जाँदैछु।",
+      "reference": "I am going to Kathmandu tomorrow.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "Place name should be rendered as Kathmandu"
+    },
+    {
+      "id": "deva-04",
+      "category": "devanagari",
+      "expected_language": "native_nepali",
+      "mode": "accurate",
+      "source": "यो काम आज सकिँदैन।",
+      "reference": "This work cannot be finished today.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "deva-05",
+      "category": "devanagari",
+      "expected_language": "native_nepali",
+      "mode": "accurate",
+      "source": "कृपया ढोका बन्द गर्नुहोस्।",
+      "reference": "Please close the door.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "deva-06",
+      "category": "devanagari",
+      "expected_language": "native_nepali",
+      "mode": "accurate",
+      "source": "उहाँ अहिले बैठकमा हुनुहुन्छ।",
+      "reference": "He/She is in a meeting right now.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "Gender not marked in Nepali; English must not invent gender (he/she or they)"
+    },
+    {
+      "id": "deva-07",
+      "category": "devanagari",
+      "expected_language": "native_nepali",
+      "mode": "accurate",
+      "source": "मलाई यो कुरा थाहा थिएन।",
+      "reference": "I didn't know this.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "deva-08",
+      "category": "devanagari",
+      "expected_language": "native_nepali",
+      "mode": "accurate",
+      "source": "हामीले परियोजना समयमै सक्यौं।",
+      "reference": "We finished the project on time.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "deva-09",
+      "category": "devanagari",
+      "expected_language": "native_nepali",
+      "mode": "accurate",
+      "source": "पानी पर्ला जस्तो छ।",
+      "reference": "It looks like it might rain.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "Keep uncertainty"
+    },
+    {
+      "id": "deva-10",
+      "category": "devanagari",
+      "expected_language": "native_nepali",
+      "mode": "accurate",
+      "source": "विद्यार्थीहरूले परीक्षा राम्रोसँग दिए।",
+      "reference": "The students did well in the exam.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "deva-11",
+      "category": "devanagari",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "मेरो Kubernetes cluster चलेन।",
+      "reference": "My Kubernetes cluster didn't run.",
+      "must_keep": [
+        "Kubernetes"
+      ],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "deva-12",
+      "category": "devanagari",
+      "expected_language": "native_nepali",
+      "mode": "accurate",
+      "source": "उनले भने कि उनी आउँदैनन्।",
+      "reference": "They said that they would not come.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": "Reported speech; respectful 'unle' — gender unmarked"
+    },
+    {
+      "id": "tens-01",
+      "category": "tense",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Ma khana khanchu.",
+      "reference": "I eat / I will eat food.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "Nepali simple present often covers future"
+    },
+    {
+      "id": "tens-02",
+      "category": "tense",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Maile khana khaye.",
+      "reference": "I ate.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "tens-03",
+      "category": "tense",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Maile khana khaisake.",
+      "reference": "I have already eaten.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "tens-04",
+      "category": "tense",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Ma khana khadai chu.",
+      "reference": "I am eating.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "tens-05",
+      "category": "tense",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Maile khana khayeko thiye.",
+      "reference": "I had eaten.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "tens-06",
+      "category": "tense",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Ma khana khadina.",
+      "reference": "I don't eat / I won't eat.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "tens-07",
+      "category": "tense",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Maile khana khayina.",
+      "reference": "I didn't eat.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "tens-08",
+      "category": "tense",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Usle aajhai phone uthayena.",
+      "reference": "He/She still hasn't picked up the phone.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "tens-09",
+      "category": "tense",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Tyo kaam kahile pani bhayena.",
+      "reference": "That work was never done.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "tens-10",
+      "category": "tense",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Kasaile pani bhanena.",
+      "reference": "Nobody said anything.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "tens-11",
+      "category": "tense",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Ma janu pardaina.",
+      "reference": "I don't have to go.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": "Absence of obligation, not prohibition"
+    },
+    {
+      "id": "tens-12",
+      "category": "tense",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Timi najau.",
+      "reference": "Don't go.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": "Prohibitive na- prefix"
+    },
+    {
+      "id": "ambi-01",
+      "category": "ambiguous",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Ma ghar ma chu.",
+      "reference": "I am at home.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "'Ma' = I, 'ma' = at; both in one sentence"
+    },
+    {
+      "id": "ambi-02",
+      "category": "ambiguous",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Uslai kura lagyo.",
+      "reference": "He/She was hurt by what was said.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "'kura lagnu' idiom = take offence; literal = words struck"
+    },
+    {
+      "id": "ambi-03",
+      "category": "ambiguous",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Ko aayo?",
+      "reference": "Who came?",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "'ko' = who, not possessive"
+    },
+    {
+      "id": "ambi-04",
+      "category": "ambiguous",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Tyo manche ko ghar thulo cha.",
+      "reference": "That person's house is big.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "'ko' = possessive here"
+    },
+    {
+      "id": "ambi-05",
+      "category": "ambiguous",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Malai dar lagyo.",
+      "reference": "I got scared.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "'dar' = fear; could be misread as English 'dare'"
+    },
+    {
+      "id": "ambi-06",
+      "category": "ambiguous",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Hami sabai thik chau, chinta nagarnus.",
+      "reference": "We're all fine, don't worry.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "gram-01",
+      "category": "grammar",
+      "expected_language": "english",
+      "mode": "grammar",
+      "source": "I has send the report yesterday.",
+      "reference": "I sent the report yesterday.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "gram-02",
+      "category": "grammar",
+      "expected_language": "english",
+      "mode": "grammar",
+      "source": "He don't know about the meeting.",
+      "reference": "He doesn't know about the meeting.",
+      "must_keep": [],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "gram-03",
+      "category": "grammar",
+      "expected_language": "english",
+      "mode": "grammar",
+      "source": "The pods is not ready because deployment failed.",
+      "reference": "The pods are not ready because the deployment failed.",
+      "must_keep": [
+        "pods"
+      ],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "gram-04",
+      "category": "grammar",
+      "expected_language": "english",
+      "mode": "grammar",
+      "source": "Please do the needful and revert back.",
+      "reference": "Please take the necessary action and reply.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "Regional idiom; minimal change acceptable"
+    },
+    {
+      "id": "gram-05",
+      "category": "grammar",
+      "expected_language": "english",
+      "mode": "grammar",
+      "source": "Me and my friend goes to college everyday.",
+      "reference": "My friend and I go to college every day.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": ""
+    },
+    {
+      "id": "long-01",
+      "category": "long",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Hijo hamro team le production ma naya version deploy garyo. Deploy gare pachi kehi users le login garna sakenan. Hamile logs herda authentication service ma timeout dekhiyo. Ahile temporary fix lagayeko chau tara root cause ajhai pattalagaunu baki cha.",
+      "reference": "Yesterday our team deployed a new version to production. After the deployment, some users could not log in. When we checked the logs, we saw timeouts in the authentication service. We have applied a temporary fix for now, but the root cause still needs to be identified.",
+      "must_keep": [
+        "production",
+        "authentication service"
+      ],
+      "must_negate": true,
+      "notes": ""
+    },
+    {
+      "id": "long-02",
+      "category": "long",
+      "expected_language": "mixed",
+      "mode": "accurate",
+      "source": "Ma university ma MBA padhdai chu. Kaam ra padhai sangai garna garo cha, tara ma time management sikdai chu. Yo semester ma tin ota assignment ra euta group project cha.",
+      "reference": "I am studying for an MBA at university. Doing work and studies together is difficult, but I am learning time management. This semester there are three assignments and one group project.",
+      "must_keep": [
+        "MBA"
+      ],
+      "must_negate": false,
+      "notes": "Progressive aspect padhdai chu; sikdai chu"
+    },
+    {
+      "id": "long-03",
+      "category": "long",
+      "expected_language": "romanized_nepali",
+      "mode": "accurate",
+      "source": "Hamro gaun ma bato banna thaleko chha. Pahile bazaar jana dui ghanta lagthyo, aba bus chalna thalepachhi aadha ghanta ma pugincha. Tara barsat ma bato bigrincha ki bhanne chinta chha.",
+      "reference": "A road has started being built in our village. It used to take two hours to go to the market; now that buses have started running, you get there in half an hour. But there is worry that the road may get damaged during the monsoon.",
+      "must_keep": [],
+      "must_negate": false,
+      "notes": "Habitual past 'lagthyo'; hedge 'ki bhanne chinta'"
+    }
+  ]
+}

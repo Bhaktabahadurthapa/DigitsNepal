@@ -1,0 +1,50 @@
+[package]
+name = "digitsnepal"
+version = "0.1.0"
+description = "Nepali-English AI writing and translation assistant"
+authors = ["DigitsNepal contributors"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.85"
+
+[lib]
+name = "digitsnepal_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-clipboard-manager = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["time", "sync", "macros", "rt-multi-thread"] }
+async-trait = "0.1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+log = "0.4"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+accessibility-sys = "0.2"
+core-foundation = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
+
+# Proc-macros and build scripts must not be stripped: on macOS 26+ dyld
+# rejects stripped proc-macro dylibs ("mis-aligned LINKEDIT string pool").
+[profile.release.build-override]
+strip = false
+opt-level = 0

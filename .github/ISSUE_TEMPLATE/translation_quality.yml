@@ -1,0 +1,19 @@
+name: Translation quality
+description: A translation that changed the meaning
+labels: [translation-quality]
+body:
+  - type: textarea
+    id: source
+    attributes: { label: Nepali input (non-private example) }
+    validations: { required: true }
+  - type: textarea
+    id: output
+    attributes: { label: DigitsNepal output }
+    validations: { required: true }
+  - type: textarea
+    id: better
+    attributes: { label: Correct meaning in English }
+    validations: { required: true }
+  - type: input
+    id: model
+    attributes: { label: Provider / model / mode, placeholder: "Ollama gemma3:4b, Accurate" }
