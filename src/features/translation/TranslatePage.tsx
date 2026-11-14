@@ -4,7 +4,8 @@ import { ModeSelect } from "../../components/ModeSelect";
 import { WordMeaningTable } from "../../components/WordMeaningTable";
 import { useTranslate } from "../../hooks/useTranslate";
 import { api, isTauri } from "../../providers/api";
-import { LANGUAGE_LABEL, MODES, type Detection, type Settings, type TranslationMode, type WordMeaning } from "../../types/translation";
+import { nextStep } from "../../lib/providerReady";
+import { LANGUAGE_LABEL, MODES, type Detection, type ProviderInfo, type Settings, type TranslationMode, type WordMeaning } from "../../types/translation";
 
 const PROVIDER_NAMES: Record<string, string> = {
   ollama: "Ollama (local)", lmstudio: "LM Studio (local)", gemini: "Gemini (cloud)", anthropic: "Claude (cloud)", openai: "OpenAI (cloud)",
@@ -22,6 +23,11 @@ export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "
   const [detection, setDetection] = useState<Detection | null>(null);
   const [saved, setSaved] = useState(false);
   const t = useTranslate();
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  useEffect(() => {
+    api.listProviders().then(setProviders).catch(() => {});
+  }, [settings]);
+  const pending = settings ? nextStep(providers.find((p) => p.id === settings.provider), settings) : undefined;
 
   useEffect(() => {
     if (settings) setMode(settings.default_mode);
@@ -57,6 +63,15 @@ export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "
           Provider: <span className={providerIsLocal ? "text-ok" : "text-crimson"}>{providerLabel}</span>
         </button>
       </div>
+
+      {pending && (
+        <div role="alert" className="flex items-center gap-3 rounded-md bg-warn-bg px-3 py-2 text-warn-text">
+          <span className="flex-1">
+            Provider setup isn't finished: <strong>{pending.label.charAt(0).toLowerCase() + pending.label.slice(1)}</strong> is still needed before translating.
+          </span>
+          <Button onClick={onOpenSettings}>Finish setup</Button>
+        </div>
+      )}
 
       <div className="grid min-h-0 flex-1 grid-cols-2 gap-3">
         <Panel

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button, Toggle } from "../../components/ui";
+import { setupSteps } from "../../lib/providerReady";
 import { api } from "../../providers/api";
 import type { AppError, ModelInfo, ProviderConfig, ProviderInfo, Settings } from "../../types/translation";
 
@@ -15,6 +16,8 @@ export function ProviderSettings({ settings, update }: { settings: Settings; upd
   const [msg, setMsg] = useState<string | null>(null);
   const [url, setUrl] = useState("");
   const [manualModel, setManualModel] = useState("");
+  const [test, setTest] = useState<{ ok: boolean; text: string } | null>(null);
+  const [testing, setTesting] = useState(false);
 
   const id = settings.provider;
   const cfg = settings.providers[id] ?? EMPTY;
@@ -30,6 +33,7 @@ export function ProviderSettings({ settings, update }: { settings: Settings; upd
     setManualModel(cfg.model);
     setKey("");
     setMsg(null);
+    setTest(null);
   }, [id, info?.default_base_url, cfg.base_url, cfg.model]);
 
   const setCfg = (patch: Partial<ProviderConfig>) => update({ providers: { ...settings.providers, [id]: { ...cfg, ...patch } } });
@@ -82,6 +86,16 @@ export function ProviderSettings({ settings, update }: { settings: Settings; upd
         {info && <p className="mt-1 text-[12px] text-muted">{info.key_help}</p>}
       </div>
 
+      {info && (
+        <ol aria-label="Setup checklist" className="flex flex-wrap gap-x-4 gap-y-1 rounded-md bg-surface-2 px-3 py-2 text-[12px]">
+          {setupSteps(info, settings).map((st, i) => (
+            <li key={st.id} className={st.done ? "text-ok" : "text-warn-text"}>
+              {st.done ? "✓" : `${i + 1}.`} {st.label}
+            </li>
+          ))}
+        </ol>
+      )}
+
       {info?.editable_url && (
         <div>
           <label className="mb-1 block text-[12px] text-muted" htmlFor="base-url">
@@ -95,12 +109,14 @@ export function ProviderSettings({ settings, update }: { settings: Settings; upd
       )}
 
       {info?.cloud && (
+        <div className={cfg.cloud_consent ? "" : "rounded-md bg-warn-bg px-3 text-warn-text"}>
         <Toggle
           checked={cfg.cloud_consent}
-          onChange={(v) => setCfg({ cloud_consent: v })}
+          onChange={(v) => setCfg(info.editable_url && url.trim() && url.trim() !== cfg.base_url ? { cloud_consent: v, base_url: url } : { cloud_consent: v })}
           label={`I understand my text is sent to ${info.name}`}
-          description="Required before DigitsNepal makes any request to this service. Applies to this provider only."
+          description={cfg.cloud_consent ? "DigitsNepal may send text you translate to this service." : "Turn this on to continue — nothing is sent to this service until you do."}
         />
+        </div>
       )}
 
       {info && (info.needs_key || info.id === "custom" || info.protocol === "open_ai") && !info.local && (
@@ -164,6 +180,26 @@ export function ProviderSettings({ settings, update }: { settings: Settings; upd
         </div>
         {!ready && info && <p className="mt-1 text-[12px] text-muted">{info.cloud && !cfg.cloud_consent ? "Confirm cloud use above to load models." : info.needs_key && !info.key_present ? "Add an API key to load models." : ""}</p>}
         {modelError && <p className="mt-1 text-[12px] text-error-text">{modelError}</p>}
+        <div className="mt-3 flex items-center gap-2">
+          <Button
+            disabled={!ready || !cfg.model || testing}
+            onClick={async () => {
+              setTesting(true);
+              setTest(null);
+              try {
+                const r = await api.translate("Yo error kina aayo?", "accurate", false, true);
+                setTest({ ok: true, text: `Working: “Yo error kina aayo?” → “${r.result.accurate_english}”` });
+              } catch (e) {
+                setTest({ ok: false, text: (e as AppError).message });
+              } finally {
+                setTesting(false);
+              }
+            }}
+          >
+            {testing ? "Testing…" : "Test connection"}
+          </Button>
+          {test && <span role="status" className={`text-[12px] ${test.ok ? "text-ok" : "text-error-text"}`}>{test.text}</span>}
+        </div>
         {id === "ollama" && !modelError && ready && models.length === 0 && (
           <p className="mt-1 text-[12px] text-muted">
             No local models yet. In Terminal: <code>ollama pull gemma3</code> (or another multilingual model).

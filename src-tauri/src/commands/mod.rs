@@ -67,6 +67,15 @@ pub struct TranslateResponse {
 #[tauri::command]
 pub async fn translate(args: TranslateArgs, state: State<'_, AppState>) -> CmdResult<TranslateResponse> {
     let settings = state.settings.lock().unwrap().clone();
+    if settings.provider_config(&settings.provider).model.trim().is_empty() {
+        let name = registry::preset(&settings.provider)
+            .map(|p| p.name)
+            .unwrap_or("this provider");
+        return Err(err(
+            "no_model",
+            format!("No model is selected for {name}. Choose or type one in Settings → AI provider."),
+        ));
+    }
     let provider = build_provider(&settings, &settings.provider)?;
     let result = engine::translate(provider.as_ref(), &args.request, &RetryPolicy::default())
         .await
