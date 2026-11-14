@@ -1,6 +1,9 @@
 name: Release
+# Run manually (Actions → Release → Run workflow) with an existing tag.
 on:
-  push: { tags: ["v*"] }
+  workflow_dispatch:
+    inputs:
+      tag: { description: "Tag to build, e.g. v0.1.1", required: true }
 permissions: { contents: write }
 jobs:
   build:
@@ -30,7 +33,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           args: --target ${{ matrix.target }} --bundles app,dmg
-          tagName: ${{ github.ref_name }}
-          releaseName: DigitsNepal ${{ github.ref_name }}
+          tagName: ${{ inputs.tag }}
+          releaseName: DigitsNepal ${{ inputs.tag }}
           releaseBody: "See CHANGELOG.md. Unless stated otherwise, builds are unsigned: right-click → Open on first launch."
           releaseDraft: true
