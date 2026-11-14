@@ -42,3 +42,15 @@ Do not describe a build as notarized unless those commands pass.
 ## Versioning
 
 Semantic versioning. Bump `version` in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json` together, update `CHANGELOG.md`, then tag `vX.Y.Z`. The `release` workflow builds the DMG and drafts a GitHub release.
+
+## Website (digitsnepal.com)
+
+The site is plain static HTML in `website/`, hosted on Hostinger (PHP/HTML site, `public_html`).
+
+To update it: edit `website/`, commit, then refresh the deploy branch and upload the files:
+
+```bash
+git subtree split --prefix website -b website-deploy && git push -f origin website-deploy:website
+```
+
+Upload the files in `website/` to `public_html` with hPanel › Files › File Manager › Upload, or connect Hostinger's Git deployment to the `website` branch. When a new version is released, update the download link in `website/index.html`.
