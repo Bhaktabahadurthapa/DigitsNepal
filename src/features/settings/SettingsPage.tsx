@@ -68,7 +68,7 @@ export function SettingsPage({ settings, update, error }: { settings: Settings |
 
         <Section title="Privacy">
           <Toggle checked={s.history_enabled} onChange={(v) => update({ history_enabled: v })} label="Save translation history on this Mac" description="Off by default. Stored locally only; manage it in History." />
-          <Toggle checked={s.live_compose} onChange={(v) => update({ live_compose: v })} label="Enable Live Compose" description="Translates in the Compose window as you pause. Only text typed inside DigitsNepal is processed." />
+          <Toggle checked={s.auto_translate} onChange={(v) => update({ auto_translate: v })} label="Auto-translate as I type" description="Translates on the Translate screen when you pause or finish a sentence. With a cloud provider, each update is an API request." />
           <p className="py-2 text-[12px] text-muted">DigitsNepal has no analytics, no telemetry, and no account. Network requests are only made to the provider you choose.</p>
         </Section>
       </div>

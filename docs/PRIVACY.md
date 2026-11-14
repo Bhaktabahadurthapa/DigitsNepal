@@ -15,7 +15,7 @@ DigitsNepal is built so that nothing leaves your Mac unless you deliberately cho
 * **No telemetry, analytics or crash reporting.** The app makes no network requests except to the provider you selected.
 * **Per-provider cloud consent.** Requests to any endpoint that is not on this Mac are blocked in Rust until you tick "I understand my text is sent to <provider>" for that specific provider. Listing models also requires consent.
 * **Local means local.** Ollama and LM Studio addresses must be loopback addresses. Remote custom servers must use HTTPS and count as cloud, so they need consent.
-* **No keylogging.** DigitsNepal never installs an event tap or watches keystrokes. Live Compose only processes text typed inside the DigitsNepal window.
+* **No keylogging.** DigitsNepal never installs an event tap or watches keystrokes. Live auto-translate only processes text typed inside the DigitsNepal window.
 * **No content logging.** Logs contain error codes, never translation text.
 * **Private translations.** When history is on, you can tick *Private* to keep a single translation out of it.
 

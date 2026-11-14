@@ -160,9 +160,9 @@ fn build_tray_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::W
         app,
         "pause",
         if s.paused {
-            "Resume Shortcut & Live Compose"
+            "Resume Shortcut & Auto-Translate"
         } else {
-            "Pause Shortcut & Live Compose"
+            "Pause Shortcut & Auto-Translate"
         },
         true,
         None::<&str>,

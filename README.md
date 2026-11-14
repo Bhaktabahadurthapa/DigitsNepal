@@ -24,7 +24,7 @@ It works with **any AI provider**. Run a model on your own Mac for free with Oll
 | **System-wide shortcut** (default ⌃⌥T): select text in another app, then translate, copy, **replace** or edit it in a compact popover. Undo the last replacement from the menu bar | ✅ built; see [verification status](#verification-status) |
 | **Menu bar**: open, translate clipboard text, mode, pause/resume, settings, quit | ✅ |
 | **Smart language detection** (offline): Romanized Nepali, Devanagari, English, mixed | ✅ |
-| **Live Compose**: a dedicated window that translates as you pause or finish a sentence | ✅ (opt-in) |
+| **Live translation while you type**: English updates when you pause or finish a sentence. No button needed. **Keep on top** pins the window over meeting apps | ✅ |
 | **History** (local, opt-in): search, favorites, delete, clear all, JSON export, private mode | ✅ |
 | **Any AI provider**, local or cloud, with model discovery | ✅ |
 | Voice input | ⏳ planned (Phase 4) |

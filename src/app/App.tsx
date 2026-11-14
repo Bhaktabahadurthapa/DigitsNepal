@@ -1,6 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
-import { ComposePage } from "../features/compose/ComposePage";
 import { WordExplorer } from "../features/dictionary/WordExplorer";
 import { HistoryPage } from "../features/history/HistoryPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -9,12 +8,11 @@ import { useSettings } from "../hooks/useSettings";
 import { isTauri } from "../providers/api";
 import type { WordMeaning } from "../types/translation";
 
-type Tab = "translate" | "compose" | "explorer" | "history" | "settings";
+type Tab = "translate" | "explorer" | "history" | "settings";
 const TABS: { id: Tab; label: string; key: string }[] = [
   { id: "translate", label: "Translate", key: "1" },
-  { id: "compose", label: "Live Compose", key: "2" },
-  { id: "explorer", label: "Word Explorer", key: "3" },
-  { id: "history", label: "History", key: "4" },
+  { id: "explorer", label: "Word Explorer", key: "2" },
+  { id: "history", label: "History", key: "3" },
   { id: "settings", label: "Settings", key: "," },
 ];
 
@@ -88,7 +86,6 @@ export function App() {
         <div data-tauri-drag-region className="h-3" />
         <div className="h-[calc(100%-0.75rem)]">
           {tab === "translate" && <TranslatePage key={reuse?.n ?? 0} settings={settings} onOpenSettings={() => setTab("settings")} onExplore={(text, meanings) => { setExplore({ text, meanings }); setTab("explorer"); }} {...(reuse ? { initial: reuse.text } : {})} />}
-          {tab === "compose" && <ComposePage settings={settings} onEnable={() => update({ live_compose: true })} />}
           {tab === "explorer" && <WordExplorer initialText={explore.text} initialMeanings={explore.meanings} />}
           {tab === "history" && <HistoryPage settings={settings} onEnable={() => update({ history_enabled: true })} onReuse={(text) => { setReuse({ text, n: Date.now() }); setTab("translate"); }} />}
           {tab === "settings" && <SettingsPage settings={settings} update={update} error={error} />}

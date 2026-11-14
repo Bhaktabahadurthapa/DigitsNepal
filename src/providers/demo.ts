@@ -14,7 +14,7 @@ export const demoSettings: Settings = {
   history_enabled: false,
   clipboard_fallback: false,
   word_meanings: true,
-  live_compose: false,
+  auto_translate: true,
   paused: false,
   onboarding_done: true,
 };

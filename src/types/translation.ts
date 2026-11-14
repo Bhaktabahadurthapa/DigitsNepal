@@ -94,7 +94,7 @@ export interface Settings {
   history_enabled: boolean;
   clipboard_fallback: boolean;
   word_meanings: boolean;
-  live_compose: boolean;
+  auto_translate: boolean;
   paused: boolean;
   onboarding_done: boolean;
 }

@@ -1,6 +1,6 @@
 # Live typing: feasibility notes
 
-**Status:** a dedicated **Live Compose** window ships in this version. System-wide inline conversion does **not**, and DigitsNepal does not claim it works.
+**Status:** live translation while typing ships inside the DigitsNepal Translate screen. System-wide inline conversion does **not**, and DigitsNepal does not claim it works.
 
 ## Options considered
 
@@ -10,7 +10,7 @@
 | AX polling of the focused field | Periodically read `AXValue` and replace sentences | ❌ Rejected. It reads text the user didn't select, races with typing, breaks undo in the host app, and many apps don't support writes. |
 | **InputMethodKit input method** (`IMKInputController`) | A Nepali→English input source the user switches to, like Pinyin. It receives keys only while selected, and composes in marked text that the user confirms. | ✅ The right long-term design. The user opts in per keystroke context (input source menu), it works in most Cocoa text views, and secure fields bypass it automatically. Cost: a separate `.app` bundle in `~/Library/Input Methods`, written in Swift or Objective-C, with its own signing, and LLM latency (0.5–5 s) inside an input method needs careful async candidate UI. |
 | macOS Services menu ("Translate with DigitsNepal") | `NSServices` entry acting on the selection | ✅ Feasible follow-up. It complements the shortcut, but isn't "live". |
-| **Dedicated compose window** | Type inside DigitsNepal; translate on pauses or sentence ends; copy out | ✅ **Implemented** (`src/features/compose`). Debounced (1.2 s pause, or immediately at `. ! ? ।`), never fires mid-word unless the pause is long, can be paused with a button, Esc, or the menu bar, and needs no extra permissions. |
+| **In-app live translation** | Type inside DigitsNepal; translate on pauses or sentence ends; copy out | ✅ **Implemented** (Translate screen, `src/lib/compose.ts`). Debounced (1.2 s pause, or immediately at `. ! ? ।`), never fires mid-word unless the pause is long, can be paused with a button, Esc, or the menu bar, and needs no extra permissions. |
 
 ## Next steps for an input method
 

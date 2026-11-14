@@ -24,8 +24,8 @@ pub struct Settings {
     /// Offer "Use clipboard text" when selected text can't be read. Off by default.
     pub clipboard_fallback: bool,
     pub word_meanings: bool,
-    /// Live compose window: translate on pauses / sentence ends.
-    pub live_compose: bool,
+    /// Translate automatically while typing in the Translate screen.
+    pub auto_translate: bool,
     /// Pause all shortcut-driven features (menu bar toggle).
     pub paused: bool,
     pub onboarding_done: bool,
@@ -48,7 +48,7 @@ impl Default for Settings {
             history_enabled: false,
             clipboard_fallback: false,
             word_meanings: true,
-            live_compose: false,
+            auto_translate: true,
             paused: false,
             onboarding_done: false,
         }
@@ -93,7 +93,6 @@ mod tests {
         assert!(!s.history_enabled);
         assert!(s.providers.values().all(|c| !c.cloud_consent));
         assert!(!s.clipboard_fallback);
-        assert!(!s.live_compose);
         assert_eq!(s.provider, "ollama", "default must be local");
         assert_eq!(s.default_mode, TranslationMode::Accurate);
     }

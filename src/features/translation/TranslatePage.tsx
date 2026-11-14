@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect, useRef, useState } from "react";
 import { Button, CopyButton, ErrorBanner, Notice, Panel, Spinner } from "../../components/ui";
 import { ModeSelect } from "../../components/ModeSelect";
 import { WordMeaningTable } from "../../components/WordMeaningTable";
 import { useTranslate } from "../../hooks/useTranslate";
 import { api, isTauri } from "../../providers/api";
 import { nextStep } from "../../lib/providerReady";
+import { shouldTranslate } from "../../lib/compose";
 import { LANGUAGE_LABEL, MODES, type Detection, type ProviderInfo, type Settings, type TranslationMode, type WordMeaning } from "../../types/translation";
 
 const PROVIDER_NAMES: Record<string, string> = {
@@ -45,7 +47,36 @@ export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "
 
   const translate = () => {
     setSaved(false);
+    lastAuto.current = text;
     return t.run(text, mode, showWords, isPrivate);
+  };
+
+  // Live translation: runs on a short pause or at the end of a sentence,
+  // never in the middle of a word. Only text typed here is processed.
+  const autoOn = (settings?.auto_translate ?? true) && !settings?.paused && !pending;
+  const lastEdit = useRef(Date.now());
+  const lastAuto = useRef("");
+  useEffect(() => {
+    if (!autoOn) return;
+    const h = setInterval(() => {
+      if (shouldTranslate(text, lastAuto.current, Date.now() - lastEdit.current)) translate();
+    }, 250);
+    return () => clearInterval(h);
+  }, [autoOn, text, mode, showWords, isPrivate]);
+  // Re-translate the current text when the mode changes.
+  useEffect(() => {
+    lastAuto.current = "";
+  }, [mode]);
+
+  const [pinned, setPinned] = useState(false);
+  const togglePin = async () => {
+    const next = !pinned;
+    try {
+      if (isTauri()) await getCurrentWindow().setAlwaysOnTop(next);
+      setPinned(next);
+    } catch {
+      /* ignore */
+    }
   };
 
   const r = t.result;
@@ -59,6 +90,9 @@ export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "
       <div className="flex flex-wrap items-center gap-2">
         <ModeSelect value={mode} onChange={setMode} />
         <div className="flex-1" />
+        <Button variant={pinned ? "primary" : "secondary"} aria-pressed={pinned} onClick={togglePin} title="Keep this window above other apps (e.g. during meetings)">
+          {pinned ? "📌 On top" : "📌 Keep on top"}
+        </Button>
         <button type="button" onClick={onOpenSettings} className="text-[12px] text-muted hover:text-ink" title="Change provider in Settings">
           Provider: <span className={providerIsLocal ? "text-ok" : "text-crimson"}>{providerLabel}</span>
         </button>
@@ -104,10 +138,14 @@ export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "
           <textarea
             aria-label="Text to translate"
             className="h-full min-h-40 w-full resize-none bg-transparent p-3 text-[15px] leading-relaxed outline-none"
-            placeholder="Type or paste Romanized Nepali, Devanagari, or mixed text…  e.g. Yo error kina aayo?"
+            placeholder="Start typing in Nepali — English appears on the right as you type.  e.g. Yo error kina aayo?"
             value={text}
             spellCheck={false}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              lastEdit.current = Date.now();
+              if (!e.target.value.trim()) t.reset();
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
@@ -117,11 +155,21 @@ export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "
           />
         </Panel>
 
-        <Panel title="English" actions={r && <CopyButton text={r.accurate_english} label="Copy" />}>
+        <Panel
+          title={
+            <span>
+              English
+              <span className={`ml-2 font-normal normal-case tracking-normal ${autoOn ? "text-ok" : ""}`}>
+                {autoOn ? "· Live" : settings?.paused ? "· Paused" : "· Manual"}
+              </span>
+            </span>
+          }
+          actions={r && <CopyButton text={mode !== "accurate" && r.styled_english ? r.styled_english : r.accurate_english} label="Copy English" />}
+        >
           <div className="flex flex-col gap-3 p-3">
-            {t.loading && <Spinner />}
+            {t.loading && <Spinner label={r ? "Updating…" : "Translating…"} />}
             <ErrorBanner error={t.error} onRetry={translate} />
-            {!r && !t.loading && !t.error && <p className="text-muted">Press Translate or ⌘↩ to see the English translation here.</p>}
+            {!r && !t.loading && !t.error && <p className="text-muted">{autoOn ? "English appears here as you type." : "Press Translate or ⌘↩ to see the English translation here."}</p>}
             {r && (
               <>
                 <Block label={mode === "grammar" ? "Corrected English" : "Accurate English"} text={r.accurate_english} big />
@@ -159,6 +207,16 @@ export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "
         <Button variant="primary" onClick={translate} disabled={!text.trim() || t.loading} aria-keyshortcuts="Meta+Enter">
           Translate <span className="opacity-70">⌘↩</span>
         </Button>
+        <label className="flex items-center gap-1.5 text-[12px] text-muted" title="Translate automatically while you type">
+          <input
+            type="checkbox"
+            checked={settings?.auto_translate ?? true}
+            onChange={(e) => api.updateSettings({ ...settings!, auto_translate: e.target.checked }).catch(() => {})}
+            className="accent-[var(--accent)]"
+            disabled={!settings}
+          />
+          Auto-translate as I type
+        </label>
         <label className="flex items-center gap-1.5 text-[12px] text-muted">
           <input type="checkbox" checked={showWords} onChange={(e) => setShowWords(e.target.checked)} className="accent-[var(--accent)]" />
           Show word meanings

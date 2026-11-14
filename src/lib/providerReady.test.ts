@@ -9,7 +9,7 @@ const custom: ProviderInfo = {
 const settings = (consent: boolean, model: string): Settings => ({
   provider: "custom", providers: { custom: { model, base_url: "https://api.example.com/v1", cloud_consent: consent } },
   default_mode: "accurate", shortcut: "Control+Alt+T", shortcut_enabled: true, history_enabled: false,
-  clipboard_fallback: false, word_meanings: true, live_compose: false, paused: false, onboarding_done: false,
+  clipboard_fallback: false, word_meanings: true, auto_translate: true, paused: false, onboarding_done: false,
 });
 
 describe("provider setup steps", () => {

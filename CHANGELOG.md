@@ -11,7 +11,7 @@
 - Global shortcut (default ⌃⌥T) → selected-text capture through Accessibility → quick-translate popover with Copy, Replace, Edit and Cancel; undo the last replacement from the menu bar.
 - Menu bar item: open, translate clipboard text, mode, pause/resume, settings, quit.
 - Opt-in local history: search, favorites, delete, clear all, JSON export, per-translation private mode.
-- Live Compose window (opt-in).
+- Live auto-translate while typing on the Translate screen (on by default; pausable), and a Keep-on-top pin for meetings.
 - Keychain storage for API keys; loopback-only Ollama; cloud consent gate.
 - 111-case evaluation dataset, offline detection test, and live eval runner.
 
