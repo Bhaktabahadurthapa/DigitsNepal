@@ -23,6 +23,7 @@ It works with **any AI provider**. Run a model on your own Mac for free with Oll
 | **Word Meaning Explorer**: click any Nepali word or phrase for its contextual meaning, literal meaning, Devanagari spelling and uncertainty flags. Offline dictionary glosses work with no model at all | ✅ |
 | **System-wide shortcut** (default ⌃⌥T): select text in another app, then translate, copy, **replace** or edit it in a compact popover. Undo the last replacement from the menu bar | ✅ built; see [verification status](#verification-status) |
 | **Menu bar**: open, translate clipboard text, mode, pause/resume, settings, quit | ✅ |
+| **Overlay mode for meetings**: compact, always-on-top, see-through window (adjustable opacity) that can be **hidden from screen sharing and recordings** | ✅ built; check with your meeting app's share preview |
 | **Smart language detection** (offline): Romanized Nepali, Devanagari, English, mixed | ✅ |
 | **Live translation while you type**: English updates when you pause or finish a sentence. No button needed. **Keep on top** pins the window over meeting apps | ✅ |
 | **History** (local, opt-in): search, favorites, delete, clear all, JSON export, private mode | ✅ |

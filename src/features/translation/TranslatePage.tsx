@@ -1,8 +1,8 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState } from "react";
 import { Button, CopyButton, ErrorBanner, Notice, Panel, Spinner } from "../../components/ui";
 import { ModeSelect } from "../../components/ModeSelect";
 import { WordMeaningTable } from "../../components/WordMeaningTable";
+import { OverlayControls } from "../../components/OverlayControls";
 import { useTranslate } from "../../hooks/useTranslate";
 import { api, isTauri } from "../../providers/api";
 import { nextStep } from "../../lib/providerReady";
@@ -17,7 +17,21 @@ const LOCAL_PROVIDERS = new Set(["ollama", "lmstudio"]);
 
 const EXAMPLE = "Maile hijo meeting ma technical problem ko barema kura gareko thiye tara solution clear bhayena.";
 
-export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "" }: { settings: Settings | null; onOpenSettings: () => void; onExplore: (text: string, meanings?: WordMeaning[]) => void; initial?: string }) {
+export function TranslatePage({
+  settings,
+  onOpenSettings,
+  onExplore,
+  initial = "",
+  overlay = false,
+  onToggleOverlay,
+}: {
+  settings: Settings | null;
+  onOpenSettings: () => void;
+  onExplore: (text: string, meanings?: WordMeaning[]) => void;
+  initial?: string;
+  overlay?: boolean;
+  onToggleOverlay?: () => void;
+}) {
   const [text, setText] = useState(initial);
   const [mode, setMode] = useState<TranslationMode>(settings?.default_mode ?? "accurate");
   const [showWords, setShowWords] = useState(settings?.word_meanings ?? true);
@@ -48,7 +62,7 @@ export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "
   const translate = () => {
     setSaved(false);
     lastAuto.current = text;
-    return t.run(text, mode, showWords, isPrivate);
+    return t.run(text, mode, showWords && !overlay, isPrivate);
   };
 
   // Live translation: runs on a short pause or at the end of a sentence,
@@ -68,16 +82,7 @@ export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "
     lastAuto.current = "";
   }, [mode]);
 
-  const [pinned, setPinned] = useState(false);
-  const togglePin = async () => {
-    const next = !pinned;
-    try {
-      if (isTauri()) await getCurrentWindow().setAlwaysOnTop(next);
-      setPinned(next);
-    } catch {
-      /* ignore */
-    }
-  };
+
 
   const r = t.result;
   const styledLabel = r?.styled_mode ? MODES.find((m) => m.id === r.styled_mode)?.label + " English" : null;
@@ -86,17 +91,28 @@ export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "
   const providerIsLocal = settings ? LOCAL_PROVIDERS.has(settings.provider) : true;
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <ModeSelect value={mode} onChange={setMode} />
-        <div className="flex-1" />
-        <Button variant={pinned ? "primary" : "secondary"} aria-pressed={pinned} onClick={togglePin} title="Keep this window above other apps (e.g. during meetings)">
-          {pinned ? "📌 On top" : "📌 Keep on top"}
-        </Button>
-        <button type="button" onClick={onOpenSettings} className="text-[12px] text-muted hover:text-ink" title="Change provider in Settings">
-          Provider: <span className={providerIsLocal ? "text-ok" : "text-crimson"}>{providerLabel}</span>
-        </button>
-      </div>
+    <div className={`flex h-full min-h-0 flex-col ${overlay ? "gap-2 p-2 pt-1.5" : "gap-3 p-4"}`}>
+      {overlay ? (
+        <div data-tauri-drag-region className="flex items-center gap-2 pl-[68px]">
+          <ModeSelect compact value={mode} onChange={setMode} />
+          <div data-tauri-drag-region className="flex-1" />
+          {settings && <OverlayControls settings={settings} compact />}
+          <Button variant="primary" className="whitespace-nowrap" onClick={onToggleOverlay} title="Back to the full window">
+            Exit
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <ModeSelect value={mode} onChange={setMode} />
+          <div className="flex-1" />
+          <Button onClick={onToggleOverlay} title="Small always-on-top window for meetings — can be hidden from screen sharing">
+            ◱ Overlay mode
+          </Button>
+          <button type="button" onClick={onOpenSettings} className="text-[12px] text-muted hover:text-ink" title="Change provider in Settings">
+            Provider: <span className={providerIsLocal ? "text-ok" : "text-crimson"}>{providerLabel}</span>
+          </button>
+        </div>
+      )}
 
       {pending && (
         <div role="alert" className="flex items-center gap-3 rounded-md bg-warn-bg px-3 py-2 text-warn-text">
@@ -107,7 +123,7 @@ export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 grid-cols-2 gap-3">
+      <div className={`grid min-h-0 flex-1 gap-3 ${overlay ? "grid-cols-1 grid-rows-[2fr_3fr]" : "grid-cols-2"}`}>
         <Panel
           title={
             <span>
@@ -170,7 +186,9 @@ export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "
             {t.loading && <Spinner label={r ? "Updating…" : "Translating…"} />}
             <ErrorBanner error={t.error} onRetry={translate} />
             {!r && !t.loading && !t.error && <p className="text-muted">{autoOn ? "English appears here as you type." : "Press Translate or ⌘↩ to see the English translation here."}</p>}
-            {r && (
+            {r && overlay && <Block label={mode !== "accurate" && r.styled_english ? `${styledLabel}` : "English"} text={mode !== "accurate" && r.styled_english ? r.styled_english : r.accurate_english} big />}
+            {r && overlay && r.warnings.map((w) => <Notice key={w}>{w}</Notice>)}
+            {r && !overlay && (
               <>
                 <Block label={mode === "grammar" ? "Corrected English" : "Accurate English"} text={r.accurate_english} big />
                 {r.styled_english && styledLabel && <Block label={styledLabel} text={r.styled_english} />}
@@ -197,7 +215,7 @@ export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "
         </Panel>
       </div>
 
-      {r && showWords && r.word_meanings.length > 0 && (
+      {!overlay && r && showWords && r.word_meanings.length > 0 && (
         <Panel title="Word meanings" className="max-h-64" actions={<Button variant="ghost" onClick={() => onExplore(r.original_text, r.word_meanings)}>Open in Word Explorer</Button>}>
           <WordMeaningTable items={r.word_meanings} />
         </Panel>
@@ -217,7 +235,7 @@ export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "
           />
           Auto-translate as I type
         </label>
-        <label className="flex items-center gap-1.5 text-[12px] text-muted">
+        <label hidden={overlay} className="flex items-center gap-1.5 text-[12px] text-muted">
           <input type="checkbox" checked={showWords} onChange={(e) => setShowWords(e.target.checked)} className="accent-[var(--accent)]" />
           Show word meanings
         </label>
@@ -228,7 +246,7 @@ export function TranslatePage({ settings, onOpenSettings, onExplore, initial = "
           </label>
         )}
         <div className="flex-1" />
-        {r && (
+        {r && !overlay && (
           <Button
             disabled={saved}
             onClick={async () => {

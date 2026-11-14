@@ -19,6 +19,10 @@ Please report privately via GitHub Security Advisories ("Report a vulnerability"
 | **Shell injection** | Commands built from user input | The only process spawned is `/usr/bin/open` with a constant URL. |
 | **Local data at rest** | Other users reading history | Files written atomically with mode 0600 in the user's Application Support folder. History is opt-in. |
 
+## Notes
+
+* `macOSPrivateApi` is enabled in `tauri.conf.json` so windows can be transparent (Overlay opacity). That rules out Mac App Store distribution, but it doesn't affect direct downloads.
+
 ## Known limitations
 
 * Unsigned builds can't be verified by Gatekeeper; build from source or check the release checksum.

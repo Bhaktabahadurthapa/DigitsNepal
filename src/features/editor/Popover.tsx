@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button, CopyButton, ErrorBanner, Notice, Spinner } from "../../components/ui";
 import { ModeSelect } from "../../components/ModeSelect";
 import { useTranslate } from "../../hooks/useTranslate";
+import { useAppearance } from "../../hooks/useAppearance";
 import { api, isTauri } from "../../providers/api";
 import type { AppError, PendingCapture, Settings, TranslationMode } from "../../types/translation";
 
@@ -14,6 +15,8 @@ export function Popover() {
   const [mode, setMode] = useState<TranslationMode>("accurate");
   const [actionError, setActionError] = useState<AppError | null>(null);
   const t = useTranslate();
+  const [appearance, setAppearance] = useState<Settings | null>(null);
+  useAppearance(appearance);
 
   const start = useCallback(
     async (p: PendingCapture) => {
@@ -25,6 +28,7 @@ export function Popover() {
       try {
         const s: Settings = await api.getSettings();
         m = s.default_mode;
+        setAppearance(s);
       } catch {
         /* default */
       }

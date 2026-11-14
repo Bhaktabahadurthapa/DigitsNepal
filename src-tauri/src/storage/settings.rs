@@ -26,6 +26,14 @@ pub struct Settings {
     pub word_meanings: bool,
     /// Translate automatically while typing in the Translate screen.
     pub auto_translate: bool,
+    /// Provider ids with an API key saved in the Keychain. Lets the UI show
+    /// "key saved" without reading the Keychain (which may prompt).
+    pub saved_keys: Vec<String>,
+    /// Exclude DigitsNepal windows from screenshots, screen recording and
+    /// screen sharing (macOS window sharing type "none").
+    pub hide_from_capture: bool,
+    /// Window background opacity in percent (30–100). Text stays opaque.
+    pub window_opacity: u8,
     /// Pause all shortcut-driven features (menu bar toggle).
     pub paused: bool,
     pub onboarding_done: bool,
@@ -49,6 +57,9 @@ impl Default for Settings {
             clipboard_fallback: false,
             word_meanings: true,
             auto_translate: true,
+            saved_keys: Vec::new(),
+            hide_from_capture: false,
+            window_opacity: 100,
             paused: false,
             onboarding_done: false,
         }

@@ -95,6 +95,9 @@ export interface Settings {
   clipboard_fallback: boolean;
   word_meanings: boolean;
   auto_translate: boolean;
+  saved_keys: string[];
+  hide_from_capture: boolean;
+  window_opacity: number;
   paused: boolean;
   onboarding_done: boolean;
 }

@@ -34,8 +34,50 @@ fn access_err(e: TextAccessError) -> ErrorPayload {
     err(&code, e.to_string())
 }
 
-fn build_provider(s: &Settings, id: &str) -> Result<Box<dyn Provider>, ErrorPayload> {
-    let key = keychain::get(&registry::keychain_account(id)).map_err(|e| err("keychain", e.to_string()))?;
+/// Read a provider's API key, from memory if already read this session.
+fn cached_key(state: &AppState, id: &str) -> Result<Option<String>, ErrorPayload> {
+    if let Some(k) = state.secrets.lock().unwrap().get(id) {
+        return Ok(k.clone());
+    }
+    let key = match keychain::get(&registry::keychain_account(id)) {
+        Ok(k) => k,
+        Err(_) => {
+            // Denied or failed: don't ask again this session.
+            state.secrets.lock().unwrap().insert(id.to_string(), None);
+            return Err(err(
+                "keychain",
+                "macOS did not allow DigitsNepal to read your API key. Re-enter the key in Settings → AI provider (no password needed), or restart the app and choose “Always Allow”.",
+            ));
+        }
+    };
+    state.secrets.lock().unwrap().insert(id.to_string(), key.clone());
+    if key.is_some() {
+        remember_saved_key(state, id, true);
+    }
+    Ok(key)
+}
+
+fn remember_saved_key(state: &AppState, id: &str, present: bool) {
+    let mut s = state.settings.lock().unwrap();
+    let has = s.saved_keys.iter().any(|k| k == id);
+    if present != has {
+        if present {
+            s.saved_keys.push(id.to_string());
+        } else {
+            s.saved_keys.retain(|k| k != id);
+        }
+        let _ = state.settings_store.save(&s);
+    }
+}
+
+fn build_provider(state: &AppState, s: &Settings, id: &str) -> Result<Box<dyn Provider>, ErrorPayload> {
+    let p = registry::preset(id).ok_or_else(|| err("unknown_provider", format!("Unknown provider '{id}'.")))?;
+    // Local servers without a key requirement never touch the Keychain.
+    let key = if p.local && !p.needs_key {
+        None
+    } else {
+        cached_key(state, id)?
+    };
     registry::build(id, &s.provider_config(id), key).map_err(|e| match e {
         BuildError::UnknownProvider(p) => err("unknown_provider", format!("Unknown provider '{p}'.")),
         BuildError::InvalidUrl(m) => err("invalid_url", m),
@@ -76,7 +118,7 @@ pub async fn translate(args: TranslateArgs, state: State<'_, AppState>) -> CmdRe
             format!("No model is selected for {name}. Choose or type one in Settings → AI provider."),
         ));
     }
-    let provider = build_provider(&settings, &settings.provider)?;
+    let provider = build_provider(&state, &settings, &settings.provider)?;
     let result = engine::translate(provider.as_ref(), &args.request, &RetryPolicy::default())
         .await
         .map_err(|e: EngineError| e.payload())?;
@@ -137,10 +179,8 @@ pub fn list_providers(state: State<'_, AppState>) -> Vec<ProviderInfo> {
             let cfg = s.provider_config(p.id);
             ProviderInfo {
                 preset: p,
-                key_present: keychain::get(&registry::keychain_account(p.id))
-                    .ok()
-                    .flatten()
-                    .is_some(),
+                // No Keychain read here: presence is tracked in settings.
+                key_present: s.saved_keys.iter().any(|k| k == p.id),
                 base_url: registry::resolve_base_url(p, &cfg).ok(),
                 cloud: registry::is_cloud(p, &cfg),
             }
@@ -159,7 +199,7 @@ pub struct ModelList {
 #[tauri::command]
 pub async fn list_models(provider: String, state: State<'_, AppState>) -> CmdResult<ModelList> {
     let s = state.settings.lock().unwrap().clone();
-    let p = build_provider(&s, &provider)?;
+    let p = build_provider(&state, &s, &provider)?;
     let models = p
         .list_models()
         .await
@@ -181,16 +221,28 @@ pub fn provider_status() -> ProviderStatus {
 }
 
 #[tauri::command]
-pub fn set_api_key(provider: String, key: String) -> CmdResult<()> {
+pub fn set_api_key(provider: String, key: String, app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     registry::preset(&provider).ok_or_else(|| err("unknown_provider", "Unknown provider."))?;
     let k = keychain::validate_api_key_shape(&key).map_err(|m| err("invalid_key", m))?;
-    keychain::set(&registry::keychain_account(&provider), k).map_err(|e| err("keychain", e.to_string()))
+    keychain::set(&registry::keychain_account(&provider), k).map_err(|e| err("keychain", e.to_string()))?;
+    state
+        .secrets
+        .lock()
+        .unwrap()
+        .insert(provider.clone(), Some(k.to_string()));
+    remember_saved_key(&state, &provider, true);
+    let _ = app.emit("settings:changed", state.settings.lock().unwrap().clone());
+    Ok(())
 }
 
 #[tauri::command]
-pub fn delete_api_key(provider: String) -> CmdResult<()> {
+pub fn delete_api_key(provider: String, app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     registry::preset(&provider).ok_or_else(|| err("unknown_provider", "Unknown provider."))?;
-    keychain::delete(&registry::keychain_account(&provider)).map_err(|e| err("keychain", e.to_string()))
+    keychain::delete(&registry::keychain_account(&provider)).map_err(|e| err("keychain", e.to_string()))?;
+    state.secrets.lock().unwrap().insert(provider.clone(), None);
+    remember_saved_key(&state, &provider, false);
+    let _ = app.emit("settings:changed", state.settings.lock().unwrap().clone());
+    Ok(())
 }
 
 // ---------- Settings ----------
@@ -214,6 +266,9 @@ pub fn update_settings(mut next: Settings, app: AppHandle, state: State<'_, AppS
             cfg.base_url.clear();
         }
     }
+    next.window_opacity = next.window_opacity.clamp(30, 100);
+    // Key presence is owned by the native side.
+    next.saved_keys = state.settings.lock().unwrap().saved_keys.clone();
     next.shortcut = shortcuts::normalise(&next.shortcut).map_err(|m| err("invalid_shortcut", m))?;
     let prev = state.settings.lock().unwrap().clone();
     if prev.shortcut != next.shortcut || prev.shortcut_enabled != next.shortcut_enabled || prev.paused != next.paused {
@@ -224,6 +279,7 @@ pub fn update_settings(mut next: Settings, app: AppHandle, state: State<'_, AppS
     }
     state.settings_store.save(&next).map_err(|e| err("io", e.to_string()))?;
     *state.settings.lock().unwrap() = next.clone();
+    crate::apply_window_prefs(&app, &next);
     crate::refresh_tray(&app);
     let _ = app.emit("settings:changed", &next);
     Ok(next)

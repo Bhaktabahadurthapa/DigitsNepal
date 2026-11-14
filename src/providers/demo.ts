@@ -15,6 +15,9 @@ export const demoSettings: Settings = {
   clipboard_fallback: false,
   word_meanings: true,
   auto_translate: true,
+  saved_keys: [],
+  hide_from_capture: false,
+  window_opacity: 100,
   paused: false,
   onboarding_done: true,
 };

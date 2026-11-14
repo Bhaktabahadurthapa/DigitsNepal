@@ -38,6 +38,17 @@ pub fn show_main(app: &AppHandle, tab: Option<&str>) {
     }
 }
 
+/// Apply window-level preferences to every DigitsNepal window.
+pub fn apply_window_prefs(app: &AppHandle, s: &Settings) {
+    for label in ["main", "popover"] {
+        if let Some(w) = app.get_webview_window(label) {
+            if let Err(e) = w.set_content_protected(s.hide_from_capture) {
+                log::warn!("could not set content protection: {e}");
+            }
+        }
+    }
+}
+
 fn set_pending(app: &AppHandle, mut p: PendingCapture) {
     let state = app.state::<AppState>();
     let mut seq = state.seq.lock().unwrap();
@@ -156,6 +167,14 @@ fn build_tray_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::W
         .collect::<Result<_, _>>()?;
     let mode_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = modes.iter().map(|m| m as _).collect();
     let mode_menu = Submenu::with_items(app, "Translation Mode", true, &mode_refs)?;
+    let hide = CheckMenuItem::with_id(
+        app,
+        "hide_capture",
+        "Hide from Screen Sharing",
+        true,
+        s.hide_from_capture,
+        None::<&str>,
+    )?;
     let pause = MenuItem::with_id(
         app,
         "pause",
@@ -178,6 +197,7 @@ fn build_tray_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::W
             &undo,
             &sep()?,
             &mode_menu,
+            &hide,
             &pause,
             &sep()?,
             &settings,
@@ -203,6 +223,7 @@ fn update_settings_from_native(app: &AppHandle, f: impl FnOnce(&mut Settings)) {
     };
     let _ = state.settings_store.save(&next);
     let _ = register_shortcut(app, &next);
+    apply_window_prefs(app, &next);
     refresh_tray(app);
     let _ = app.emit("settings:changed", &next);
 }
@@ -213,6 +234,7 @@ fn on_menu(app: &AppHandle, id: &str) {
         "clipboard" => translate_clipboard(app),
         "settings" => show_main(app, Some("settings")),
         "pause" => update_settings_from_native(app, |s| s.paused = !s.paused),
+        "hide_capture" => update_settings_from_native(app, |s| s.hide_from_capture = !s.hide_from_capture),
         "quit" => app.exit(0),
         "undo" => {
             let app = app.clone();
@@ -258,9 +280,11 @@ pub fn run() {
                 last_replacement: Mutex::new(None),
                 pending: Mutex::new(PendingCapture::default()),
                 seq: Mutex::new(0),
+                secrets: Mutex::new(Default::default()),
             });
 
             let handle = app.handle().clone();
+            apply_window_prefs(&handle, &settings);
             if let Err(e) = register_shortcut(&handle, &settings) {
                 log::warn!("{e}");
                 let _ = handle.emit("shortcut:error", e);

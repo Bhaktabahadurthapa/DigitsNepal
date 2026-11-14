@@ -15,6 +15,8 @@
 - Keychain storage for API keys; loopback-only Ollama; cloud consent gate.
 - 111-case evaluation dataset, offline detection test, and live eval runner.
 
+- Overlay mode: compact always-on-top window on all Spaces, adjustable background opacity (text stays solid), and "Hide from screen sharing" (macOS content protection) for the main window and popover.
+
 ### Not yet implemented
 - Voice input (Phase 4).
 - System-wide inline live typing (see docs/LIVE_TYPING.md).

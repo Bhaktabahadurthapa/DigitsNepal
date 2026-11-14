@@ -4,6 +4,7 @@ import { ModeSelect } from "../../components/ModeSelect";
 import { api } from "../../providers/api";
 import type { AppError, Settings } from "../../types/translation";
 import { ProviderSettings } from "./ProviderSettings";
+import { OverlayControls } from "../../components/OverlayControls";
 
 export function SettingsPage({ settings, update, error }: { settings: Settings | null; update: (p: Partial<Settings>) => Promise<Settings | undefined>; error: AppError | null }) {
   const [status, setStatus] = useState<{ accessibility_trusted: boolean } | null>(null);
@@ -64,6 +65,13 @@ export function SettingsPage({ settings, update, error }: { settings: Settings |
             label="Offer clipboard fallback"
             description="If an app does not expose selected text, show a “Use clipboard text” button. The clipboard is only read when you click it."
           />
+        </Section>
+
+        <Section title="Overlay & screen sharing">
+          <OverlayControls settings={s} />
+          <p className="py-2 text-[12px] text-muted">
+            “Hide from screen sharing” asks macOS to leave DigitsNepal out of screenshots, recordings and shared screens (Zoom, Meet, Teams). You still see it. Check with your meeting app’s share preview before relying on it — a few capture tools may ignore this setting. Turn on Overlay mode from the Translate screen for a compact, always-on-top window.
+          </p>
         </Section>
 
         <Section title="Privacy">

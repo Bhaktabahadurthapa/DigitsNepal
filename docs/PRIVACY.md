@@ -19,6 +19,12 @@ DigitsNepal is built so that nothing leaves your Mac unless you deliberately cho
 * **No content logging.** Logs contain error codes, never translation text.
 * **Private translations.** When history is on, you can tick *Private* to keep a single translation out of it.
 
+## Hiding DigitsNepal from screen sharing
+
+**Settings › Overlay & screen sharing › Hide from screen sharing** (also in the menu bar) sets the macOS window sharing type to *none* for every DigitsNepal window, using Tauri's `set_content_protected`. Screenshots, screen recordings and screen-sharing apps that respect this flag show nothing where the window is. You still see it.
+
+Limitations: this is a request to macOS, not a guarantee. Some capture tools, or future macOS versions, may ignore it, and a phone camera obviously isn't affected. Check with your meeting app's share preview, or a QuickTime screen recording, before relying on it.
+
 ## Revoking permissions
 
 * Accessibility: System Settings › Privacy & Security › Accessibility, then remove DigitsNepal. Or run `tccutil reset Accessibility org.digitsnepal.app`.

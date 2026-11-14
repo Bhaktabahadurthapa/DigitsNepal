@@ -2,10 +2,10 @@
 
 /* Native-macOS-utility tokens. Light by default, dark via system setting. */
 :root {
-  --bg: #f5f5f4;
-  --surface: #ffffff;
-  --surface-2: #fafaf9;
-  --sidebar: #ecebe8;
+  --bg-solid: #f5f5f4;
+  --surface-solid: #ffffff;
+  --surface-2-solid: #fafaf9;
+  --sidebar-solid: #ecebe8;
   --border: #e2e0dc;
   --text: #1c1b1a;
   --muted: #6b6862;
@@ -23,10 +23,10 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1b1b1d;
-    --surface: #242426;
-    --surface-2: #2a2a2d;
-    --sidebar: #202022;
+    --bg-solid: #1b1b1d;
+    --surface-solid: #242426;
+    --surface-2-solid: #2a2a2d;
+    --sidebar-solid: #202022;
     --border: #38383c;
     --text: #ececec;
     --muted: #a1a1a6;
@@ -41,6 +41,15 @@
     --focus: #7ea6ff;
     color-scheme: dark;
   }
+}
+
+:root {
+  /* Window background opacity (Settings › Overlay). Text is never faded. */
+  --alpha: 1;
+  --bg: color-mix(in srgb, var(--bg-solid) calc(var(--alpha) * 100%), transparent);
+  --surface: color-mix(in srgb, var(--surface-solid) calc(min(1, var(--alpha) + 0.12) * 100%), transparent);
+  --surface-2: color-mix(in srgb, var(--surface-2-solid) calc(min(1, var(--alpha) + 0.12) * 100%), transparent);
+  --sidebar: color-mix(in srgb, var(--sidebar-solid) calc(var(--alpha) * 100%), transparent);
 }
 
 @theme inline {
@@ -67,6 +76,10 @@ html,
 body,
 #root {
   height: 100%;
+}
+
+html {
+  background: transparent;
 }
 
 body {
@@ -102,4 +115,9 @@ input,
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* Keep text legible over whatever is behind a translucent window. */
+:root.glass body {
+  text-shadow: 0 0 6px var(--bg-solid);
 }

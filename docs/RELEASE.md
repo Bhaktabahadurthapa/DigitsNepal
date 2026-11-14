@@ -5,7 +5,8 @@
 ```bash
 npm install
 npm run app:dev                 # hot-reloading desktop app
-npm run app:build               # → src-tauri/target/release/bundle/{macos,dmg}
+CI=true npm run app:build       # → src-tauri/target/release/bundle/{macos,dmg}
+                                # (CI=true skips the Finder AppleScript step, which needs automation permission)
 ```
 
 Outputs (Apple Silicon): `DigitsNepal.app` (~5 MB) and `DigitsNepal_<version>_aarch64.dmg` (~2.6 MB).
@@ -21,7 +22,8 @@ Release builds are **not code-signed or notarized** unless you set it up. On ano
 
 1. Open the DMG and drag DigitsNepal to Applications.
 2. Right-click DigitsNepal and choose **Open**, then confirm. Or allow it in System Settings › Privacy & Security › "Open Anyway".
-3. Accessibility permission is tied to the binary's signature. Each new unsigned build may need to be re-approved in System Settings › Privacy & Security › Accessibility (remove the old entry, then add the new one).
+3. **Keychain prompts:** an unsigned app gets a new identity with every build, so after an update macOS asks once for the Keychain password. Choose **Always Allow**. DigitsNepal reads each API key at most once per launch, and only when it sends a request.
+4. Accessibility permission is tied to the binary's signature. Each new unsigned build may need to be re-approved in System Settings › Privacy & Security › Accessibility (remove the old entry, then add the new one).
 
 ## Signing & notarization (maintainers)
 
