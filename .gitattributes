@@ -1,0 +1,16 @@
+# Keep GitHub's language bar focused on the application itself.
+scripts/**          linguist-vendored
+website/**          linguist-documentation
+tests/fixtures/**   linguist-generated
+docs/**             linguist-documentation
+*.lock              linguist-generated
+package-lock.json   linguist-generated
+
+# Consistent line endings
+* text=auto eol=lf
+*.png  binary
+*.jpg  binary
+*.webp binary
+*.icns binary
+*.ico  binary
+*.woff2 binary

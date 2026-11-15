@@ -1,99 +1,97 @@
-<p align="center"><img src="src-tauri/icons/128x128@2x.png" width="96" alt="DigitsNepal icon"></p>
+<div align="center">
+
+<img src="src-tauri/icons/128x128@2x.png" width="88" alt="DigitsNepal">
 
 # DigitsNepal
 
-**Every Nepali Word Has Meaning.**
+**Nepali → English writing assistant for macOS, powered by DigitsNepalAI.**
 
-DigitsNepal is a free, open-source, privacy-first macOS app for writing and translating between Nepali and English. Type Romanized Nepali the way you normally do:
+Type in Romanized Nepali, Devanagari, or a mix with English, and get natural English as you write.
 
-> Maile hijo meeting ma technical problem ko barema kura gareko thiye tara solution clear bhayena.
+[Website](https://digitsnepal.com) · [Download](https://digitsnepal.com/download) · [Dictionary](https://digitsnepal.com/dictionary) · [Changelog](https://digitsnepal.com/changelog)
 
-and get natural English, without leaving the app you're writing in:
+[![Release](https://img.shields.io/github/v/release/Bhaktabahadurthapa/DigitsNepal?color=c1272d&label=release)](https://github.com/Bhaktabahadurthapa/DigitsNepal/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/Bhaktabahadurthapa/DigitsNepal/ci.yml?branch=main&label=CI)](https://github.com/Bhaktabahadurthapa/DigitsNepal/actions/workflows/ci.yml)
+[![Platform](https://img.shields.io/badge/platform-macOS%2012%2B-0b3d91)](https://digitsnepal.com/download)
+[![License: MIT](https://img.shields.io/badge/license-MIT-1b1714)](LICENSE)
 
-> I discussed the technical problem during yesterday's meeting, but the solution was not clear.
+<br>
 
-It works with **any AI provider**. Run a model on your own Mac for free with Ollama or LM Studio, or bring your own key for Gemini, Claude, OpenAI, OpenRouter, Groq, Mistral, DeepSeek, Together, xAI, or any OpenAI-compatible server.
+<img src="docs/assets/digitsnepal-hero.jpg" alt="DigitsNepal: Romanized Nepali glossed word by word and translated into English" width="860">
+
+</div>
+
+## Overview
+
+```text
+Maile hijo meeting ma technical problem ko barema kura gareko thiye tara solution clear bhayena.
+→ I discussed the technical problem during yesterday's meeting, but the solution was not clear.
+```
+
+DigitsNepal keeps the meaning, tense, negation and tone of what you wrote. The faithful translation always sits beside a polished version, and technical terms like *Kubernetes*, *AWS* or *pods* pass through unchanged.
 
 ## Features
 
-| | Status |
-|---|---|
-| **Translate workspace**: original, Devanagari, faithful English and a polished rewrite side by side, each copyable | ✅ |
-| **Six modes**: Accurate (default), Professional, Casual, Academic, Technical, Grammar Correction | ✅ |
-| **Word Meaning Explorer**: click any Nepali word or phrase for its contextual meaning, literal meaning, Devanagari spelling and uncertainty flags. Offline dictionary glosses work with no model at all | ✅ |
-| **System-wide shortcut** (default ⌃⌥T): select text in another app, then translate, copy, **replace** or edit it in a compact popover. Undo the last replacement from the menu bar | ✅ built; see [verification status](#verification-status) |
-| **Menu bar**: open, translate clipboard text, mode, pause/resume, settings, quit | ✅ |
-| **Overlay mode for meetings**: compact, always-on-top, see-through window (adjustable opacity) that can be **hidden from screen sharing and recordings** | ✅ built; check with your meeting app's share preview |
-| **Smart language detection** (offline): Romanized Nepali, Devanagari, English, mixed | ✅ |
-| **Live translation while you type**: English updates when you pause or finish a sentence. No button needed. **Keep on top** pins the window over meeting apps | ✅ |
-| **History** (local, opt-in): search, favorites, delete, clear all, JSON export, private mode | ✅ |
-| **Any AI provider**, local or cloud, with model discovery | ✅ |
-| Voice input | ⏳ planned (Phase 4) |
-| Inline live typing in every app (input method) | ⏳ researched, see [docs/LIVE_TYPING.md](docs/LIVE_TYPING.md) |
+- **Live translation:** English updates as you type, with no button to press.
+- **Works in any app:** select text and press <kbd>⌃</kbd><kbd>⌥</kbd><kbd>T</kbd> to translate, copy, or replace it in place, with undo.
+- **Word Meaning Explorer:** contextual and literal meaning, Devanagari spelling, and ambiguity notes for every word and phrase.
+- **Six modes:** Accurate, Professional, Casual, Academic, Technical, and Grammar Correction.
+- **Meeting overlay:** a compact, translucent, always-on-top window that can be hidden from screen sharing.
+- **Model of your choice:** DigitsNepalAI runs locally with Ollama or LM Studio, or with your own key for Claude, Gemini, OpenAI, OpenRouter, Groq, Mistral, DeepSeek, Together, xAI, or any OpenAI-compatible server.
 
-## Install
+## Installation
 
-### From source (recommended for now)
+Download the latest `.dmg` from [digitsnepal.com/download](https://digitsnepal.com/download) or [GitHub Releases](https://github.com/Bhaktabahadurthapa/DigitsNepal/releases/latest).
 
-Requirements: macOS 12+, Xcode Command Line Tools (`xcode-select --install`), [Rust](https://rustup.rs), Node.js 20+.
+1. Open the disk image and drag **DigitsNepal** to **Applications**.
+2. On first launch, right-click the app and choose **Open**. Releases are not yet notarized.
+3. In **Settings**, choose the model that powers DigitsNepalAI.
+4. To use the shortcut in other apps, allow DigitsNepal under **System Settings › Privacy & Security › Accessibility**.
+
+**Requirements:** macOS 12 or later. Prebuilt releases are for Apple Silicon; on Intel Macs, [build from source](#building-from-source).
+
+## Privacy
+
+- No account, analytics, or telemetry.
+- Local inference by default. Cloud providers are used only after you enable them, one provider at a time.
+- API keys are stored in the macOS Keychain.
+- Text is read only when you type into DigitsNepal or explicitly send a selection. Password fields are never read.
+
+See [Privacy](docs/PRIVACY.md) and [Security](SECURITY.md) for details.
+
+## Building from source
+
+**Prerequisites:** Xcode Command Line Tools, [Rust](https://rustup.rs), and Node.js 20+.
 
 ```bash
 git clone https://github.com/Bhaktabahadurthapa/DigitsNepal.git
 cd DigitsNepal
 npm install
-npm run app:dev       # run in development
-npm run app:build     # build DigitsNepal.app and a .dmg
+npm run app:dev      # run in development
+npm run app:build    # build DigitsNepal.app and .dmg
+npm run check        # typecheck, tests, lint
 ```
 
-### From a release DMG
+## Built with
 
-Release builds are currently **unsigned and not notarized**. After dragging DigitsNepal to Applications, right-click it and choose **Open** the first time. Apple Silicon and Intel builds are produced by CI. See [docs/RELEASE.md](docs/RELEASE.md).
+[Tauri 2](https://tauri.app) · Rust · React · TypeScript · Tailwind CSS
 
-## Choose an AI provider
+| Directory | Contents |
+|---|---|
+| `src-tauri/src/translation` | DigitsNepalAI engine: providers, prompts, response validation, language detection |
+| `src-tauri/src/accessibility` | Selected-text capture and replacement via macOS Accessibility |
+| `src` | Desktop interface |
+| `tests/fixtures` | Nepali–English evaluation set (111 cases) |
+| `website` | Source for digitsnepal.com |
 
-Open **Settings › AI provider**:
+## Documentation
 
-| Provider | Cost | Privacy | Setup |
-|---|---|---|---|
-| **Ollama** (default) | Free | Text stays on your Mac | Install [Ollama](https://ollama.com), then `ollama pull gemma3` (or another multilingual model) |
-| **LM Studio** | Free | Text stays on your Mac | Start LM Studio's local server |
-| **Gemini · Claude · OpenAI · OpenRouter · Groq · Mistral · DeepSeek · Together · xAI** | Your API account | Text is sent to that provider | Paste your API key (stored in macOS Keychain), confirm cloud use, pick a model |
-| **Custom** | — | Local if `localhost`, cloud otherwise | Any OpenAI-compatible `/v1` URL (vLLM, llama.cpp server, gateways), with an optional key |
+[Architecture](docs/ARCHITECTURE.md) · [Evaluation](docs/EVALUATION.md) · [Release process](docs/RELEASE.md) · [Changelog](CHANGELOG.md)
 
-Model lists are fetched live from each provider. Nothing is hard-coded, and you can always type a model ID yourself.
+## Contributing
 
-> Translation quality varies a lot between models, especially for Romanized Nepali. Use the [evaluation set](docs/EVALUATION.md) to compare models before relying on one.
-
-## Use the shortcut in any app
-
-1. Settings › *Keyboard shortcut & selected text* › **Open System Settings**, and allow DigitsNepal under *Accessibility*.
-2. Select text in any app and press **⌃⌥T**.
-3. In the popover: **Replace** puts the English in place of your selection, **Copy** copies it, **Edit** lets you change the original first, and **Esc** cancels and returns you to your app.
-
-Safety rules: DigitsNepal reads only the *selected* text, only when you press the shortcut. It never reads password fields. It replaces text only if your selection hasn't changed, and it never touches the clipboard unless you click Copy or the clearly labelled clipboard option.
-
-## Privacy
-
-There's no account, no telemetry, and no analytics. Your text only goes to the provider you choose, and cloud providers need a separate opt-in for each provider. API keys live in the macOS Keychain. Details: [docs/PRIVACY.md](docs/PRIVACY.md) · threat model: [SECURITY.md](SECURITY.md).
-
-## Verification status
-
-What was verified while building v0.1.0 (macOS 27, Apple Silicon):
-
-* ✅ `npm run check`: TypeScript, Vitest, dataset validation, rustfmt, clippy `-D warnings`, and all Rust tests pass (engine, validation, providers against local mock servers, registry, history, settings, shortcuts, AX safety rules).
-* ✅ The release `.app` and `.dmg` build and the app launches.
-* ✅ The UI flows were checked in a browser preview with demo data.
-* ⚠️ **Not yet verified:** live translation against a real model (no model or API key was available on the build machine), and the Accessibility read/replace flow in real third-party apps. App-compatibility reports are very welcome.
-
-## Develop
-
-```bash
-npm run check                                  # everything CI runs
-cd src-tauri && cargo run --example eval -- --provider ollama --model <model>
-```
-
-Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · Changelog: [CHANGELOG.md](CHANGELOG.md)
+Contributions are welcome, especially dictionary entries, evaluation sentences, and app compatibility reports. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+[MIT](LICENSE) © DigitsNepal contributors

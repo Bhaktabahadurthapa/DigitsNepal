@@ -3,7 +3,7 @@
 ## 0.1.0 — 2026-11-14 (development release, unsigned)
 
 ### Added
-- Translation engine with any AI provider: Ollama and LM Studio (local); Gemini, Anthropic Claude, OpenAI, OpenRouter, Groq, Mistral, DeepSeek, Together, xAI (cloud); or any custom OpenAI-compatible endpoint. Model discovery, per-provider Keychain keys and consent, and structured, validated JSON output.
+- DigitsNepalAI translation engine with any model provider: Ollama and LM Studio (local); Gemini, Anthropic Claude, OpenAI, OpenRouter, Groq, Mistral, DeepSeek, Together, xAI (cloud); or any custom OpenAI-compatible endpoint. Model discovery, per-provider Keychain keys and consent, and structured, validated JSON output.
 - Six modes: Accurate, Professional, Casual, Academic, Technical, Grammar Correction.
 - Offline language detection (Romanized, Devanagari, English, mixed) and a curated lexicon.
 - Side-by-side workspace: original, Devanagari, accurate English, styled English, warnings, ambiguities.
