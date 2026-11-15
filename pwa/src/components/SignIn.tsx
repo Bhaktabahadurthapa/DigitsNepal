@@ -28,10 +28,10 @@ export function SignIn({ onSignedIn, notice }: { onSignedIn: (s: Session) => voi
       <h1>DigitsNepal</h1>
       <p className="deva" lang="ne">हरेक नेपाली शब्दको अर्थ हुन्छ।</p>
       <p className="muted">Every Nepali word has meaning.</p>
-      <form onSubmit={submit} className="card signin-card">
+      <form onSubmit={submit} className="card signin-card" method="post" action="#" autoComplete="on">
         <label htmlFor="code" className="label"><Icon name="lock" size={16} /> Private access</label>
-        {/* A username field lets iCloud Keychain save the code like a password. */}
-        <input type="text" name="username" autoComplete="username" value="digitsnepal" readOnly hidden />
+        {/* A real (visually hidden) username field lets iCloud Keychain save and fill the code like a password. */}
+        <input className="sr-only" type="text" name="username" autoComplete="username" defaultValue="DigitsNepal" tabIndex={-1} aria-hidden="true" />
         <input
           id="code"
           name="password"
@@ -51,7 +51,7 @@ export function SignIn({ onSignedIn, notice }: { onSignedIn: (s: Session) => voi
         <button className="btn btn-primary" type="submit" disabled={busy || !code.trim()}>
           {busy ? "Checking…" : "Sign in"}
         </button>
-        <p className="fine">This translator is private. Sign in once on this iPhone. You stay signed in for 30 days.</p>
+        <p className="fine">This translator is private. Sign in once on this iPhone and it remembers you. Let Safari save the code to Passwords when it asks.</p>
       </form>
       <a className="fine link" href="/">digitsnepal.com</a>
     </main>

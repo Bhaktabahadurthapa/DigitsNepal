@@ -44,7 +44,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       await recordLoginFailure(env, ip);
       return fail(401, "bad_code", "That access code is not correct.", origin);
     }
-    const t = await issueToken(secret, num(env.SESSION_DAYS, 30, 1, 90));
+    const t = await issueToken(secret, num(env.SESSION_DAYS, 180, 1, 365));
     return json(t, 200, origin);
   }
 
@@ -52,7 +52,14 @@ async function route(req: Request, env: Env): Promise<Response> {
 
   if (url.pathname === "/auth/session" && req.method === "GET") {
     if (!session) return fail(401, "signed_out", "Please sign in.", origin);
-    return json({ expiresAt: session.exp * 1000, quota: await peekDailyQuota(env, num(env.DAILY_LIMIT, 150, 1, 1000)) }, 200, origin);
+    const quota = await peekDailyQuota(env, num(env.DAILY_LIMIT, 150, 1, 1000));
+    // Sliding sign-in: a device that keeps using the app is re-issued a fresh token
+    // (at most once a day), so it never has to type the access code again.
+    if (Date.now() - session.iat * 1000 > 86400_000) {
+      const renewed = await issueToken(secret, num(env.SESSION_DAYS, 180, 1, 365));
+      return json({ ...renewed, quota }, 200, origin);
+    }
+    return json({ expiresAt: session.exp * 1000, quota }, 200, origin);
   }
 
   if (url.pathname === "/translate" && req.method === "POST") {

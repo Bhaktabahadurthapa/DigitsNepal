@@ -41,6 +41,11 @@ export function Settings({ prefs, quota, historyCount, onChange, onClearHistory,
         </fieldset>
 
         <label className="row">
+          <span><b>Translate as you type</b><small>Updates the English while you type. Turn off to translate only when you tap.</small></span>
+          <input type="checkbox" role="switch" checked={prefs.live} onChange={(e) => set("live", e.target.checked)} />
+        </label>
+
+        <label className="row">
           <span><b>Word meanings</b><small>Explain each Nepali word in the result.</small></span>
           <input type="checkbox" role="switch" checked={prefs.meanings} onChange={(e) => set("meanings", e.target.checked)} />
         </label>

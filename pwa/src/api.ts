@@ -8,6 +8,12 @@ export class ApiError extends Error {
   }
 }
 
+function withTimeout(signal: AbortSignal | null | undefined, ms: number): AbortSignal {
+  const t = AbortSignal.timeout(ms);
+  if (!signal) return t;
+  return typeof AbortSignal.any === "function" ? AbortSignal.any([signal, t]) : signal;
+}
+
 async function request<T>(path: string, init: RequestInit & { token?: string } = {}): Promise<T> {
   if (!API_URL) throw new ApiError("not_configured", "The translation service is not set up yet.");
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
@@ -18,8 +24,9 @@ async function request<T>(path: string, init: RequestInit & { token?: string } =
   if (init.token) headers.set("Authorization", `Bearer ${init.token}`);
   let r: Response;
   try {
-    r = await fetch(API_URL + path, { ...init, headers, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", signal: AbortSignal.timeout(45_000) });
+    r = await fetch(API_URL + path, { ...init, headers, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", signal: withTimeout(init.signal, 45_000) });
   } catch (e) {
+    if (init.signal?.aborted) throw new ApiError("aborted", "Cancelled.");
     if (e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError")) {
       throw new ApiError("timeout", "DigitsNepalAI took too long to answer. Please try again.");
     }
@@ -37,8 +44,9 @@ async function request<T>(path: string, init: RequestInit & { token?: string } =
 export const signIn = (code: string) =>
   request<{ token: string; expiresAt: number }>("/auth/login", { method: "POST", body: JSON.stringify({ code }) });
 
+/** Also renews the device token (returned as `token`) when it is more than a day old. */
 export const checkSession = (token: string) =>
-  request<{ expiresAt: number; quota: Quota }>("/auth/session", { token });
+  request<{ expiresAt: number; quota: Quota; token?: string }>("/auth/session", { token });
 
-export const translate = (token: string, text: string, mode: Mode, meanings: boolean) =>
-  request<Translation>("/translate", { method: "POST", token, body: JSON.stringify({ text, mode, meanings }) });
+export const translate = (token: string, text: string, mode: Mode, meanings: boolean, signal?: AbortSignal) =>
+  request<Translation>("/translate", { method: "POST", token, body: JSON.stringify({ text, mode, meanings }), signal });

@@ -25,7 +25,10 @@ function mockFetch(h: Handler) {
   vi.stubGlobal("fetch", f);
   return f;
 }
-const signedIn = () => localStorage.setItem("dn.session", JSON.stringify({ token: "v1.test.sig", expiresAt: Date.now() + 86400_000 }));
+const signedIn = (live = false) => {
+  localStorage.setItem("dn.session", JSON.stringify({ token: "v1.test.sig", expiresAt: Date.now() + 86400_000 }));
+  localStorage.setItem("dn.prefs", JSON.stringify({ live }));
+};
 
 beforeEach(() => {
   localStorage.clear();
@@ -45,7 +48,7 @@ describe("sign in", () => {
     render(<App />);
     await userEvent.type(screen.getByPlaceholderText("Access code"), "my-private-code");
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    await screen.findByRole("button", { name: "Translate" });
+    await screen.findByLabelText("Text to translate");
     expect(JSON.parse(localStorage.getItem("dn.session")!).token).toBe("v1.abc.def");
     const [url, init] = f.mock.calls[0]!;
     expect(url).toBe("https://api.test/auth/login");
@@ -93,7 +96,10 @@ describe("translating", () => {
   it("does not save history unless the user turns it on", async () => {
     signedIn();
     mockFetch((u) => (u.endsWith("/translate") ? ok(RESULT) : ok({ expiresAt: 0, quota: RESULT.quota })));
+    localStorage.removeItem("dn.prefs");
     expect(loadPrefs().history).toBe(false);
+    expect(loadPrefs().live).toBe(true);
+    localStorage.setItem("dn.prefs", JSON.stringify({ live: false }));
     render(<App />);
     await userEvent.type(screen.getByLabelText("Text to translate"), "Malai thaha chaina");
     await userEvent.click(screen.getByRole("button", { name: "Translate" }));
@@ -130,5 +136,47 @@ describe("translating", () => {
     await userEvent.type(screen.getByLabelText("Text to translate"), "namaste");
     await userEvent.click(screen.getByRole("button", { name: "Translate" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("limit is used up");
+  });
+});
+
+describe("live typing", () => {
+  it("translates automatically after a pause, once per pause, without pressing a button", async () => {
+    signedIn(true);
+    const f = mockFetch((u) => (u.endsWith("/translate") ? ok(RESULT) : ok({ expiresAt: 0, quota: RESULT.quota })));
+    render(<App />);
+    expect(screen.queryByRole("button", { name: "Translate" })).toBeNull();
+    await userEvent.type(screen.getByLabelText("Text to translate"), "Malai thaha chaina");
+    await waitFor(() => expect(screen.getAllByText("I don't know.").length).toBeGreaterThan(0), { timeout: 3000 });
+    const calls = f.mock.calls.filter(([u]) => String(u).endsWith("/translate"));
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(String(calls[0]![1]?.body)).text).toBe("Malai thaha chaina");
+    expect(screen.getByText("Live English")).toBeInTheDocument();
+  });
+
+  it("does not call the API for a single letter", async () => {
+    signedIn(true);
+    const f = mockFetch(() => ok({ expiresAt: 0, quota: RESULT.quota }));
+    render(<App />);
+    await userEvent.type(screen.getByLabelText("Text to translate"), "a");
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(f.mock.calls.some(([u]) => String(u).endsWith("/translate"))).toBe(false);
+  });
+});
+
+describe("staying signed in", () => {
+  it("saves a renewed token from the server", async () => {
+    signedIn(true);
+    mockFetch(() => ok({ token: "v1.renewed.sig", expiresAt: Date.now() + 180 * 86400_000, quota: RESULT.quota }));
+    render(<App />);
+    await waitFor(() => expect(JSON.parse(localStorage.getItem("dn.session")!).token).toBe("v1.renewed.sig"));
+    expect(screen.getByLabelText("Text to translate")).toBeInTheDocument();
+  });
+
+  it("lets password managers fill and save the code", () => {
+    render(<App />);
+    const user = document.querySelector('input[autocomplete="username"]') as HTMLInputElement;
+    expect(user).not.toBeNull();
+    expect(user.hidden).toBe(false);
+    expect(screen.getByPlaceholderText("Access code")).toHaveAttribute("autocomplete", "current-password");
   });
 });

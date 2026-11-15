@@ -14,9 +14,9 @@ enabled = false
 
 [vars]
 ALLOWED_ORIGINS = "https://digitsnepal.com,https://www.digitsnepal.com"
-DAILY_LIMIT = "150"          # translations per UTC day, across all devices
+DAILY_LIMIT = "400"          # translations per UTC day, across all devices (live typing uses more)
 MAX_CHARS = "2000"           # characters per request
-SESSION_DAYS = "30"          # how long a device stays signed in
+SESSION_DAYS = "180"         # sign-in lifetime; renewed automatically while the app is used
 GEMINI_MODEL = ""            # empty = pick the newest available Flash model automatically
 
 [[kv_namespaces]]
@@ -27,4 +27,4 @@ id = "6588d298883a4f1b828548fb22a3723d"
 [[ratelimits]]
 name = "BURST"
 namespace_id = "7301"
-simple = { limit = 12, period = 60 }
+simple = { limit = 30, period = 60 }

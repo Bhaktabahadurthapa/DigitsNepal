@@ -37,7 +37,7 @@ const req = (path: string, init: RequestInit & { origin?: string | null; token?:
   h.set("CF-Connecting-IP", "203.0.113.7");
   return new Request("https://api.example.workers.dev" + path, { ...init, headers: h });
 };
-const call = (r: Request, env: Env) => worker.fetch(r, env, {} as ExecutionContext);
+const call = (r: Request, env: Env) => worker.fetch(r, env);
 
 const GOOD = {
   detected_language: "romanized_nepali",
@@ -127,6 +127,26 @@ describe("access control", () => {
     const old = (await issueToken(SECRET, 1, Date.now() - 3 * 86400_000)).token;
     expect(await verifyToken(old, SECRET)).toBeNull();
     expect((await call(req("/translate", { method: "POST", body, token: old }), env)).status).toBe(401);
+  });
+});
+
+describe("staying signed in", () => {
+  it("renews a token older than a day so the device stays signed in", async () => {
+    const env = makeEnv();
+    const old = (await issueToken(SECRET, 180, Date.now() - 2 * 86400_000)).token;
+    const r = await call(req("/auth/session", { token: old }), env);
+    expect(r.status).toBe(200);
+    const j = (await r.json()) as { token?: string; expiresAt: number };
+    expect(j.token).toMatch(/^v1\./);
+    expect(j.token).not.toBe(old);
+    expect(j.expiresAt).toBeGreaterThan(Date.now() + 170 * 86400_000);
+  });
+
+  it("does not renew a fresh token", async () => {
+    const env = makeEnv();
+    const token = await login(env);
+    const j = (await (await call(req("/auth/session", { token }), env)).json()) as { token?: string };
+    expect(j.token).toBeUndefined();
   });
 });
 

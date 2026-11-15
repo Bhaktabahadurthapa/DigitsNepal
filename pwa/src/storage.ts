@@ -18,8 +18,8 @@ export function remove(key: string): void {
   try { localStorage.removeItem(key); } catch { /* ignore */ }
 }
 
-export interface Prefs { appearance: Appearance; meanings: boolean; history: boolean }
-export const DEFAULT_PREFS: Prefs = { appearance: "system", meanings: true, history: false };
+export interface Prefs { appearance: Appearance; meanings: boolean; history: boolean; live: boolean }
+export const DEFAULT_PREFS: Prefs = { appearance: "system", meanings: true, history: false, live: true };
 export const loadPrefs = (): Prefs => ({ ...DEFAULT_PREFS, ...load<Partial<Prefs>>("dn.prefs", {}) });
 export const savePrefs = (p: Prefs) => save("dn.prefs", p);
 
@@ -34,8 +34,21 @@ export const clearSession = () => remove("dn.session");
 const HISTORY_MAX = 50;
 export const loadHistory = (): HistoryItem[] => load<HistoryItem[]>("dn.history", []);
 export function addHistory(item: HistoryItem): HistoryItem[] {
-  const list = [item, ...loadHistory().filter((h) => !(h.text === item.text && h.mode === item.mode))].slice(0, HISTORY_MAX);
+  let prev = loadHistory();
+  // Live typing produces many partial versions of one sentence: keep only the latest.
+  const top = prev[0];
+  if (top && top.mode === item.mode && item.at - top.at < 120_000 && (item.text.startsWith(top.text) || top.text.startsWith(item.text))) {
+    prev = prev.slice(1);
+  }
+  const list = [item, ...prev.filter((h) => !(h.text === item.text && h.mode === item.mode))].slice(0, HISTORY_MAX);
   save("dn.history", list);
   return list;
 }
 export const clearHistory = () => remove("dn.history");
+
+/** Ask the browser not to evict our storage (keeps the sign-in). Best effort. */
+export function requestPersistence(): void {
+  try {
+    void navigator.storage?.persist?.();
+  } catch { /* ignore */ }
+}

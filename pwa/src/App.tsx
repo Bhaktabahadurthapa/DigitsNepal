@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { ApiError, checkSession, translate } from "./api";
 import { Icon, Pennant } from "./components/Icon";
-import { Result } from "./components/Result";
+import { primaryText, Result } from "./components/Result";
 import { Settings } from "./components/Settings";
 import { SignIn } from "./components/SignIn";
+import { copyText } from "./share";
 import {
-  addHistory, clearHistory, clearSession, loadHistory, loadPrefs, loadSession, savePrefs, saveSession,
+  addHistory, clearHistory, clearSession, loadHistory, loadPrefs, loadSession, requestPersistence, savePrefs, saveSession,
   type Prefs, type Session,
 } from "./storage";
 import { applyAppearance } from "./theme";
@@ -17,7 +18,12 @@ const MODES: { id: Mode; label: string; hint: string }[] = [
   { id: "grammar", label: "Grammar", hint: "Fix & explain" },
 ];
 const MAX_CHARS = 2000;
+/** Pause after the last keystroke before translating live. */
+export const LIVE_DELAY_MS = 900;
 const EXAMPLE = "Maile hijo meeting ma technical problem ko barema kura gareko thiye tara solution clear bhayena.";
+
+/** Live translation only once there is a real word to work with. */
+const worthTranslating = (s: string) => s.replace(/[^\p{L}\p{N}]/gu, "").length >= 2;
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(loadSession);
@@ -32,10 +38,13 @@ export default function App() {
   const [settings, setSettings] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>(() => (loadPrefs().history ? loadHistory() : []));
   const [online, setOnline] = useState(() => navigator.onLine);
+  const [copied, setCopied] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const inflight = useRef(0);
+  const inflight = useRef<AbortController | null>(null);
+  const done = useRef<{ text: string; mode: Mode } | null>(null); // last translated input
 
   useEffect(() => applyAppearance(prefs.appearance), [prefs.appearance]);
+  useEffect(() => requestPersistence(), []);
 
   useEffect(() => {
     const on = () => setOnline(true), off = () => setOnline(false);
@@ -45,6 +54,7 @@ export default function App() {
   }, []);
 
   const signOut = useCallback((message?: string) => {
+    inflight.current?.abort();
     clearSession();
     setSession(null);
     setResult(null);
@@ -53,12 +63,22 @@ export default function App() {
     setNotice(message);
   }, []);
 
+  // On open: confirm the sign-in, refresh the quota, and pick up a renewed token
+  // so a device that keeps using the app never has to enter the code again.
+  const token = session?.token;
   useEffect(() => {
-    if (!session) return;
-    checkSession(session.token)
-      .then((s) => setQuota(s.quota))
-      .catch((e) => { if (e instanceof ApiError && e.status === 401) signOut("Your session ended. Please sign in again."); });
-  }, [session, signOut]);
+    if (!token) return;
+    checkSession(token)
+      .then((s) => {
+        setQuota(s.quota);
+        if (s.token && s.token !== token) {
+          const renewed = { token: s.token, expiresAt: s.expiresAt };
+          saveSession(renewed);
+          setSession(renewed);
+        }
+      })
+      .catch((e) => { if (e instanceof ApiError && e.status === 401) signOut("Your sign-in expired. Please enter your access code again."); });
+  }, [token, signOut]);
 
   const updatePrefs = (p: Prefs) => {
     if (prefs.history && !p.history) { clearHistory(); setHistory([]); }
@@ -67,43 +87,58 @@ export default function App() {
     savePrefs(p);
   };
 
-  async function run(m: Mode = mode) {
-    const value = text.trim();
-    if (!session || !value || busy) return;
-    const id = ++inflight.current;
+  const run = useCallback(async (value: string, m: Mode, auto: boolean) => {
+    if (!session || !worthTranslating(value)) return;
+    inflight.current?.abort();
+    const ctl = new AbortController();
+    inflight.current = ctl;
     setBusy(true);
-    setError(null);
-    inputRef.current?.blur(); // drop the iPhone keyboard so the result is visible
+    if (!auto) {
+      setError(null);
+      inputRef.current?.blur(); // drop the keyboard so the full result is visible
+    }
     try {
-      const t = await translate(session.token, value, m, prefs.meanings);
-      if (id !== inflight.current) return;
+      const t = await translate(session.token, value, m, prefs.meanings, ctl.signal);
+      if (ctl.signal.aborted) return;
+      done.current = { text: value, mode: m };
       setResult(t);
       setQuota(t.quota);
+      setError(null);
       if (prefs.history) {
-        setHistory(addHistory({ id: crypto.randomUUID(), at: Date.now(), text: value, mode: m, english: t.mode === "professional" && t.styled_english ? t.styled_english : t.accurate_english, nepali: t.nepali_script }));
+        setHistory(addHistory({ id: crypto.randomUUID(), at: Date.now(), text: value, mode: m, english: primaryText(t), nepali: t.nepali_script }));
       }
-      requestAnimationFrame(() => document.getElementById("result")?.scrollIntoView?.({ behavior: "smooth", block: "start" }));
+      if (!auto) requestAnimationFrame(() => document.getElementById("result")?.scrollIntoView?.({ behavior: "smooth", block: "start" }));
     } catch (e) {
-      if (id !== inflight.current) return;
-      if (e instanceof ApiError && e.status === 401) return signOut("Your session ended. Please sign in again.");
+      if (ctl.signal.aborted || (e instanceof ApiError && e.code === "aborted")) return;
+      if (e instanceof ApiError && e.status === 401) return signOut("Your sign-in expired. Please enter your access code again.");
+      // While typing, a momentary rate limit isn't worth an alarm: the next pause retries.
+      if (auto && e instanceof ApiError && e.code === "slow_down") return;
       setError(e instanceof ApiError ? { code: e.code, message: e.message } : { code: "unknown", message: "Something went wrong. Please try again." });
     } finally {
-      if (id === inflight.current) setBusy(false);
+      if (inflight.current === ctl) { inflight.current = null; setBusy(false); }
+    }
+  }, [session, prefs.meanings, prefs.history, signOut]);
+
+  // Live translation: translate after a short pause in typing, cancelling any older request.
+  useEffect(() => {
+    if (!prefs.live || !session) return;
+    const value = text.trim();
+    if (!worthTranslating(value) || !online) return;
+    if (done.current && done.current.text === value && done.current.mode === mode) return;
+    const id = window.setTimeout(() => void run(value, mode, true), LIVE_DELAY_MS);
+    return () => window.clearTimeout(id);
+  }, [text, mode, prefs.live, session, online, run]);
+
+  function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      void run(text.trim(), mode, false);
     }
   }
 
   function pickMode(m: Mode) {
     setMode(m);
-    if (result && text.trim() === lastText.current) void run(m);
-  }
-  const lastText = useRef("");
-  useEffect(() => { if (result) lastText.current = text.trim(); }, [result]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      void run();
-    }
+    if (!prefs.live && result && text.trim()) void run(text.trim(), m, false);
   }
 
   async function paste() {
@@ -113,11 +148,30 @@ export default function App() {
     } catch { inputRef.current?.focus(); }
   }
 
+  async function copyLive() {
+    if (!result) return;
+    if (await copyText(primaryText(result))) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    }
+  }
+
+  function clear() {
+    inflight.current?.abort();
+    done.current = null;
+    setText("");
+    setResult(null);
+    setError(null);
+    inputRef.current?.focus();
+  }
+
   if (!session) {
-    return <SignIn notice={notice} onSignedIn={(s) => { saveSession(s); setNotice(undefined); setSession(s); }} />;
+    return <SignIn notice={notice} onSignedIn={(s) => { saveSession(s); requestPersistence(); setNotice(undefined); setSession(s); }} />;
   }
 
   const count = [...text].length;
+  const stale = !!result && (done.current?.text !== text.trim() || done.current?.mode !== mode);
+  const showLive = prefs.live && !!text.trim();
   return (
     <div className="app">
       <header className="top">
@@ -130,7 +184,7 @@ export default function App() {
 
         <div className="modes" role="tablist" aria-label="Translation mode">
           {MODES.map((m) => (
-            <button key={m.id} role="tab" aria-selected={mode === m.id} onClick={() => pickMode(m.id)} disabled={busy}>
+            <button key={m.id} role="tab" aria-selected={mode === m.id} onClick={() => pickMode(m.id)}>
               <b>{m.label}</b><small>{m.hint}</small>
             </button>
           ))}
@@ -145,7 +199,7 @@ export default function App() {
             onChange={(e) => setText(e.target.value)}
             onKeyDown={onKey}
             maxLength={MAX_CHARS}
-            rows={4}
+            rows={3}
             placeholder={mode === "grammar" ? "Write English to check, e.g. He don't know the answer yesterday." : "Type Romanized Nepali, e.g. Malai thaha chaina, bholi feri herchu."}
             autoCapitalize="sentences"
             autoCorrect="off"
@@ -153,9 +207,20 @@ export default function App() {
             enterKeyHint="go"
             lang={mode === "grammar" ? "en" : "ne-Latn"}
           />
+
+          {showLive && (
+            <div className={"live" + (stale || busy ? " pending" : "")} aria-live="polite">
+              <div className="live-head">
+                <span className="kicker"><span className={"dot" + (busy ? " on" : "")} aria-hidden="true" /> {busy ? "Translating…" : "Live English"}</span>
+                {result && <button className="mini" onClick={copyLive} aria-label="Copy English">{copied ? <><Icon name="check" size={14} /> Copied</> : <><Icon name="copy" size={14} /> Copy</>}</button>}
+              </div>
+              <p className="live-text" lang="en">{result ? primaryText(result) : <span className="muted">Keep typing… the English appears here.</span>}</p>
+            </div>
+          )}
+
           <div className="composer-bar">
             {text ? (
-              <button className="mini" onClick={() => { setText(""); setResult(null); setError(null); inputRef.current?.focus(); }}><Icon name="x" size={15} /> Clear</button>
+              <button className="mini" onClick={clear}><Icon name="x" size={15} /> Clear</button>
             ) : (
               <>
                 <button className="mini" onClick={paste}><Icon name="paste" size={15} /> Paste</button>
@@ -166,9 +231,11 @@ export default function App() {
           </div>
         </div>
 
-        <button className="btn btn-primary go" onClick={() => run()} disabled={busy || !text.trim()}>
-          {busy ? <><span className="spinner" aria-hidden="true" /> Translating…</> : mode === "grammar" ? "Check grammar" : "Translate"}
-        </button>
+        {!prefs.live && (
+          <button className="btn btn-primary go" onClick={() => run(text.trim(), mode, false)} disabled={busy || !text.trim()}>
+            {busy ? <><span className="spinner" aria-hidden="true" /> Translating…</> : mode === "grammar" ? "Check grammar" : "Translate"}
+          </button>
+        )}
 
         {error && (
           <p className={"error-card" + (error.code === "offline" ? " offline" : "")} role="alert">

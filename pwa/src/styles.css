@@ -263,3 +263,19 @@ button { cursor: pointer; touch-action: manipulation; }
   .main { padding-top: 28px; }
   .sheet { margin: auto; border-radius: 24px; }
 }
+
+/* ---------- Live translation strip (stays visible above the iPhone keyboard) ---------- */
+.composer textarea { min-height: 96px; }
+.live {
+  margin: 2px 10px 10px 22px; padding: 10px 12px 12px; border-radius: 14px;
+  background: color-mix(in srgb, var(--blue) 7%, var(--paper)); border: 1px solid color-mix(in srgb, var(--blue) 22%, transparent);
+  transition: opacity .2s;
+}
+.live.pending .live-text { opacity: .55; }
+.live-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; }
+.live-head .kicker { margin: 0; color: var(--blue); }
+.live-head .mini { min-height: 30px; padding: 0 10px; font-size: 13.5px; }
+.live-text { margin: 4px 0 0; font-size: 19px; line-height: 1.42; font-weight: 500; user-select: text; -webkit-user-select: text; transition: opacity .2s; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: inline-block; }
+.dot.on { background: var(--blue); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
