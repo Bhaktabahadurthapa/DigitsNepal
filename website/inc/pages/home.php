@@ -1,53 +1,8 @@
-<!doctype html>
-<html lang="en" class="no-js">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DigitsNepal — Every Nepali word has meaning</title>
-<meta name="description" content="DigitsNepal is a free, open-source macOS app that turns Romanized Nepali, Devanagari and mixed Nepali-English into natural English as you type — in any app, with the AI you choose.">
-<meta property="og:title" content="DigitsNepal — Every Nepali word has meaning">
-<meta property="og:description" content="Free, open-source Nepali → English writing assistant for macOS.">
-<meta property="og:image" content="https://digitsnepal.com/icon.png">
-<meta name="theme-color" content="#f2ebdd" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#16120f" media="(prefers-color-scheme: dark)">
-<link rel="icon" href="favicon.png">
-<link rel="apple-touch-icon" href="icon.png">
-<link rel="preload" href="fonts/rozha-one-400-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="fonts/mukta-400-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="fonts.css">
-<link rel="stylesheet" href="site.css">
-</head>
-<body>
-<a class="skip" href="#main">Skip to content</a>
-
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    <!-- The Nepali flag's double pennant, reduced to a mark. -->
-    <symbol id="pennant" viewBox="0 0 100 128">
-      <path d="M4 4 L92 62 H38 L92 124 H4 Z" fill="var(--crimson)" stroke="var(--blue)" stroke-width="7" stroke-linejoin="miter"/>
-      <path d="M18 46 a12 12 0 0 0 24 0 a12 9 0 0 1 -24 0z" fill="var(--paper)"/>
-      <circle cx="29" cy="96" r="9" fill="var(--paper)"/>
-    </symbol>
-  </defs>
-</svg>
-
-<header class="masthead">
-  <div class="wrap mast-row">
-    <a class="brand" href="#top" aria-label="DigitsNepal home">
-      <svg class="brand-mark" aria-hidden="true"><use href="#pennant"/></svg>
-      <span>DigitsNepal</span>
-    </a>
-    <p class="edition">अंक <span class="deva-num">०.१.०</span> · free &amp; open source</p>
-    <nav aria-label="Primary">
-      <a href="#entries">Features</a>
-      <a href="#meetings">Meetings</a>
-      <a href="#colophon">AI</a>
-      <a class="nav-cta" href="#stamp">Download</a>
-    </nav>
-  </div>
-</header>
-
-<main id="main">
+<?php
+/** @var array $release */
+$dmg = $release['dmg'];
+$ver = ltrim($release['tag'], 'v');
+?>
 <section class="hero" id="top">
   <div class="arth" aria-hidden="true">अर्थ</div>
   <div class="wrap hero-grid">
@@ -55,12 +10,12 @@
       <p class="kicker rise" style="--d:0">Nepali → English · for macOS</p>
       <h1 class="rise" style="--d:1">Every Nepali word has <em>meaning</em>.</h1>
       <p class="deva-line rise" style="--d:2" lang="ne">हरेक नेपाली शब्दको अर्थ हुन्छ।</p>
-      <p class="lede rise" style="--d:3">Write the way you think — Romanized Nepali, देवनागरी, or a mix with English. DigitsNepal sets it beside natural English while you type, ready to copy into Slack, email, or the meeting chat.</p>
+      <p class="lede rise" style="--d:3">Write the way you think — Romanized Nepali, देवनागरी, or a mix with English. DigitsNepalAI sets it beside natural English while you type, ready to copy into Slack, email, or the meeting chat.</p>
       <div class="actions rise" style="--d:4">
-        <a class="btn btn-ink" href="https://github.com/Bhaktabahadurthapa/DigitsNepal/releases/download/v0.1.0/DigitsNepal-0.1.0-AppleSilicon.dmg">Download for Mac <span class="btn-meta">2.7 MB</span></a>
-        <a class="btn btn-line" href="https://github.com/Bhaktabahadurthapa/DigitsNepal">Read the source</a>
+        <a class="btn btn-ink" href="<?= e(url('download')) ?>">Download for Mac <span class="btn-meta"><?= e(human_size($dmg['size'])) ?></span></a>
+        <a class="btn btn-line" href="<?= e(url('dictionary')) ?>">Try the dictionary</a>
       </div>
-      <p class="fineprint rise" style="--d:5">macOS 12+ · Apple Silicon · MIT licence · no account · no tracking</p>
+      <p class="fineprint rise" style="--d:5">v<?= e($ver) ?> · macOS 12+ · Apple Silicon · MIT licence · no account · no tracking</p>
     </div>
 
     <figure class="folio rise" style="--d:3" aria-labelledby="folio-cap">
@@ -72,9 +27,7 @@
           <button role="tab" data-ex="2" aria-selected="false">३</button>
         </div>
       </div>
-
       <div class="interlinear" id="interlinear" aria-hidden="true"></div>
-
       <div class="folio-rule"><span>English</span>
         <div class="modes" role="tablist" aria-label="Writing mode">
           <button role="tab" data-mode="accurate" aria-selected="true">Accurate</button>
@@ -84,7 +37,7 @@
       </div>
       <p class="english" aria-hidden="true"><span id="english"></span><span class="caret"></span></p>
       <p class="sr-only" aria-live="polite" id="sr-english"></p>
-      <figcaption id="folio-cap">Interlinear view — each word, its script, its meaning. <i>Example output; results depend on the AI model you choose.</i></figcaption>
+      <figcaption id="folio-cap">Interlinear view — each word, its script, its meaning. <i>Example DigitsNepalAI output; results depend on the model you choose.</i></figcaption>
     </figure>
   </div>
 </section>
@@ -95,7 +48,6 @@
       <p class="sec-no">§ <span class="deva-num">१</span></p>
       <h2>A small dictionary of what it does.</h2>
     </header>
-
     <ol class="dict">
       <li class="entry reveal">
         <span class="num">१</span>
@@ -113,7 +65,7 @@
         <span class="num">३</span>
         <h3>meaning <span class="ne" lang="ne">अर्थ</span></h3>
         <p class="pos">n. — word by word</p>
-        <p>Click any word or phrase — <i>ko barema</i>, <i>kura gareko thiye</i> — for its meaning in this sentence, its literal sense, and its Devanagari spelling. Ambiguities are marked, not hidden.</p>
+        <p>Click any word or phrase — <i>ko barema</i>, <i>kura gareko thiye</i> — for its meaning in this sentence, its literal sense, and its Devanagari spelling. <a href="<?= e(url('dictionary')) ?>">Browse the dictionary →</a></p>
       </li>
       <li class="entry reveal">
         <span class="num">४</span>
@@ -125,13 +77,13 @@
         <span class="num">५</span>
         <h3>verbatim <span class="ne" lang="ne">ज्यूँका त्यूँ</span></h3>
         <p class="pos">adv. — for engineers</p>
-        <p>Kubernetes, AWS, pods, PR numbers, error codes and versions pass through untouched. If a <i>chaina</i> loses its “not”, you're warned.</p>
+        <p>Kubernetes, AWS, pods, PR numbers, error codes and versions pass through untouched. If a <i>chaina</i> loses its “not”, DigitsNepalAI warns you.</p>
       </li>
       <li class="entry reveal">
         <span class="num">६</span>
         <h3>yours <span class="ne" lang="ne">तपाईंको</span></h3>
         <p class="pos">pron. — no account</p>
-        <p>No sign-up, no analytics. Run a free model on your Mac, or bring a key from the AI you already pay for. Keys stay in the macOS Keychain.</p>
+        <p>No sign-up, no analytics. Run DigitsNepalAI on a free model on your Mac, or with a key from the provider you already use. Keys stay in the macOS Keychain.</p>
       </li>
     </ol>
   </div>
@@ -150,7 +102,6 @@
       </ul>
       <p class="aside">Check your meeting app's share preview once; a few capture tools ignore the hide request.</p>
     </div>
-
     <div class="call reveal" aria-label="Illustration: a video call with the DigitsNepal overlay visible only to you" role="img">
       <div class="call-bar"><span></span><span></span><span></span><b>Weekly sync</b><i class="rec">● Sharing screen</i></div>
       <div class="tiles">
@@ -160,7 +111,7 @@
         <div class="tile" style="--h:150"><span>You</span></div>
       </div>
       <div class="overlay-panel">
-        <div class="op-head"><span>DigitsNepal</span><span class="badge">◐ Hidden in share</span></div>
+        <div class="op-head"><span>DigitsNepalAI</span><span class="badge">◐ Hidden in share</span></div>
         <p class="op-src">Ma yo task bholi samma sakchu.</p>
         <p class="op-en">I can finish this task by tomorrow.</p>
         <span class="op-copy">Copy English</span>
@@ -169,11 +120,11 @@
   </div>
 </section>
 
-<section class="colophon" id="colophon">
+<section class="colophon" id="engine">
   <div class="wrap">
     <header class="sec-head reveal">
       <p class="sec-no">§ <span class="deva-num">३</span></p>
-      <h2>Set in the AI of your choosing.</h2>
+      <h2>DigitsNepalAI, on the model you choose.</h2>
       <p class="sec-lede">Local by default. Cloud only when you switch it on — provider by provider.</p>
     </header>
     <dl class="index reveal">
@@ -185,7 +136,7 @@
       <div><dt>OpenRouter</dt><dd>one key, many models</dd></div>
       <div><dt>Groq · Mistral · DeepSeek</dt><dd>your API key</dd></div>
       <div><dt>Together · xAI</dt><dd>your API key</dd></div>
-      <div><dt>Anything OpenAI-compatible</dt><dd>vLLM, llama.cpp, gateways</dd></div>
+      <div><dt>Any OpenAI-compatible server</dt><dd>vLLM, llama.cpp, gateways</dd></div>
     </dl>
   </div>
 </section>
@@ -198,38 +149,20 @@
         <svg class="stamp-mark"><use href="#pennant"/></svg>
         <span class="stamp-word" lang="ne">अर्थ</span>
         <span class="stamp-val">रु <b>०</b></span>
-        <span class="stamp-foot">v0.1.0 · २०२६</span>
+        <span class="stamp-foot">v<?= e($ver) ?> · <?= e(deva_digits(date('Y'))) ?></span>
       </div>
     </div>
-
     <div class="get-copy reveal">
       <p class="sec-no">§ <span class="deva-num">४</span></p>
       <h2>Free. Yours to keep.</h2>
-      <a class="btn btn-ink btn-lg" href="https://github.com/Bhaktabahadurthapa/DigitsNepal/releases/download/v0.1.0/DigitsNepal-0.1.0-AppleSilicon.dmg">Download for Mac <span class="btn-meta">.dmg · 2.7 MB</span></a>
+      <a class="btn btn-ink btn-lg" href="<?= e($dmg['url']) ?>">Download for Mac <span class="btn-meta">v<?= e($ver) ?> · <?= e(human_size($dmg['size'])) ?></span></a>
       <ol class="install">
         <li><span>१</span><p>Open the .dmg and drag <b>DigitsNepal</b> into <b>Applications</b>.</p></li>
         <li><span>२</span><p>First launch: <b>right-click → Open</b>. Early builds aren't notarized by Apple yet.</p></li>
-        <li><span>३</span><p>In <b>Settings › AI provider</b>, pick a provider and a model. Start typing.</p></li>
+        <li><span>३</span><p>In <b>Settings</b>, choose the model that powers <b>DigitsNepalAI</b>. Start typing.</p></li>
         <li><span>४</span><p>For <kbd>⌃⌥T</kbd> in other apps, allow DigitsNepal in <b>Privacy &amp; Security › Accessibility</b>.</p></li>
       </ol>
-      <p class="aside">Apple Silicon build. Intel Mac? <a href="https://github.com/Bhaktabahadurthapa/DigitsNepal#install">Build from source</a> · <a href="https://github.com/Bhaktabahadurthapa/DigitsNepal/releases">all releases &amp; checksums</a></p>
+      <p class="aside"><a href="<?= e(url('download')) ?>">Checksum, requirements &amp; troubleshooting</a> · <a href="<?= e(url('changelog')) ?>">What's new</a></p>
     </div>
   </div>
 </section>
-</main>
-
-<footer class="foot">
-  <div class="wrap foot-row">
-    <p class="foot-tag"><span lang="ne">हरेक शब्दको अर्थ हुन्छ।</span> Every word has meaning.</p>
-    <p class="foot-links">
-      <a href="https://github.com/Bhaktabahadurthapa/DigitsNepal">GitHub</a>
-      <a href="https://github.com/Bhaktabahadurthapa/DigitsNepal/blob/main/docs/PRIVACY.md">Privacy</a>
-      <a href="https://github.com/Bhaktabahadurthapa/DigitsNepal/issues">Report an issue</a>
-    </p>
-    <p class="foot-legal">© <span id="year">2026</span> DigitsNepal contributors · MIT licence. Translations are AI-generated — review important messages before sending.</p>
-  </div>
-</footer>
-
-<script src="site.js" defer></script>
-</body>
-</html>

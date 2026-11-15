@@ -3,7 +3,25 @@
   "use strict";
   document.documentElement.classList.remove("no-js");
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  document.getElementById("year").textContent = new Date().getFullYear();
+
+  // Scroll reveals
+  const io = new IntersectionObserver(
+    (entries) => entries.forEach((e) => {
+      if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+    }),
+    { threshold: 0.12, rootMargin: "0px 0px -40px 0px" },
+  );
+  document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+
+  // Copy buttons (e.g. SHA-256 on the download page)
+  document.querySelectorAll("[data-copy]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const el = document.querySelector(b.dataset.copy);
+      try { await navigator.clipboard.writeText(el.textContent.trim()); b.textContent = "Copied"; }
+      catch { b.textContent = "Select & copy"; }
+      setTimeout(() => (b.textContent = "Copy"), 1600);
+    }),
+  );
 
   // Illustrative examples (hand-written). [romanized, devanagari, gloss, isEnglishTerm]
   const EXAMPLES = [
@@ -65,7 +83,7 @@
   const srEl = document.getElementById("sr-english");
   const exTabs = [...document.querySelectorAll("[data-ex]")];
   const modeTabs = [...document.querySelectorAll("[data-mode]")];
-  if (!lin) return;
+  if (!lin) return; // only the home page has the folio
 
   let ex = 0;
   let mode = "accurate";
@@ -159,12 +177,4 @@
     { threshold: 0.3 },
   ).observe(folio);
 
-  // Scroll reveals
-  const io = new IntersectionObserver(
-    (entries) => entries.forEach((e) => {
-      if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
-    }),
-    { threshold: 0.12, rootMargin: "0px 0px -40px 0px" },
-  );
-  document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
 })();

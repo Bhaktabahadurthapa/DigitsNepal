@@ -1,14 +1,40 @@
-# Hostinger (LiteSpeed/Apache): force HTTPS and set sane caching/security headers.
+# digitsnepal.com — Hostinger (LiteSpeed). Works at the web root or in a sub-folder.
+DirectoryIndex index.php
+Options -Indexes
+AddDefaultCharset utf-8
+
 RewriteEngine On
+
+# HTTPS everywhere
 RewriteCond %{HTTPS} !=on
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Private PHP includes and docs are never served directly
+RewriteRule ^(inc|README\.md)(/|$) - [F,L]
+
+# Old static page → home
+RewriteRule ^index\.html$ ./ [R=301,L]
+
+# Clean URLs: /download, /dictionary/, …
+RewriteRule ^(dictionary|download|changelog|privacy)/?$ index.php?page=$1 [L,QSA]
+
+# Anything else that isn't a real file or folder → friendly 404
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php?page=notfound [L,QSA]
+
 <IfModule mod_headers.c>
   Header set X-Content-Type-Options "nosniff"
   Header set Referrer-Policy "strict-origin-when-cross-origin"
   Header set X-Frame-Options "SAMEORIGIN"
+  Header set Permissions-Policy "camera=(), microphone=(), geolocation=()"
 </IfModule>
 <IfModule mod_expires.c>
   ExpiresActive On
+  ExpiresByType font/woff2 "access plus 1 year"
+  ExpiresByType image/webp "access plus 30 days"
   ExpiresByType image/png "access plus 30 days"
-  ExpiresByType text/html "access plus 1 hour"
+  ExpiresByType text/css "access plus 7 days"
+  ExpiresByType application/javascript "access plus 7 days"
+  ExpiresByType application/json "access plus 1 day"
 </IfModule>

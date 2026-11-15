@@ -45,12 +45,6 @@ Semantic versioning. Bump `version` in `package.json`, `src-tauri/Cargo.toml` an
 
 ## Website (digitsnepal.com)
 
-The site is plain static HTML in `website/`, hosted on Hostinger (PHP/HTML site, `public_html`).
+A dynamic PHP site in `website/`, hosted on Hostinger. The Download and Changelog pages read GitHub Releases themselves, so **publishing a GitHub release updates the website automatically** (within an hour). There's no need to edit links.
 
-To update it: edit `website/`, commit, then refresh the deploy branch and upload the files:
-
-```bash
-git subtree split --prefix website -b website-deploy && git push -f origin website-deploy:website
-```
-
-Upload the files in `website/` to `public_html` with hPanel › Files › File Manager › Upload, or connect Hostinger's Git deployment to the `website` branch. When a new version is released, update the download link in `website/index.html`.
+If you change the site's code, see `website/README.md` for the zip-and-extract deploy.
