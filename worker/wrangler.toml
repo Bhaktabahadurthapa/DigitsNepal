@@ -1,0 +1,30 @@
+# DigitsNepal private translation API (Cloudflare Workers free plan).
+# Secrets are NOT stored here. Set them with:
+#   npx wrangler secret put GEMINI_API_KEY
+#   npx wrangler secret put ACCESS_CODE
+#   npx wrangler secret put SESSION_SECRET
+name = "digitsnepal-api"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+workers_dev = true
+account_id = "3ae975017a91e5dd1217eb7246ab35bf"
+# Turn off request logs so translated text never appears in observability.
+[observability]
+enabled = false
+
+[vars]
+ALLOWED_ORIGINS = "https://digitsnepal.com,https://www.digitsnepal.com"
+DAILY_LIMIT = "150"          # translations per UTC day, across all devices
+MAX_CHARS = "2000"           # characters per request
+SESSION_DAYS = "30"          # how long a device stays signed in
+GEMINI_MODEL = ""            # empty = pick the newest available Flash model automatically
+
+[[kv_namespaces]]
+binding = "LIMITS"
+id = "6588d298883a4f1b828548fb22a3723d"
+
+# Per-minute burst limit (free on all plans).
+[[ratelimits]]
+name = "BURST"
+namespace_id = "7301"
+simple = { limit = 12, period = 60 }

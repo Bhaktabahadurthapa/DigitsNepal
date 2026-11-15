@@ -34,6 +34,7 @@ DigitsNepal keeps the meaning, tense, negation and tone of what you wrote. The f
 - **Works in any app:** select text and press <kbd>⌃</kbd><kbd>⌥</kbd><kbd>T</kbd> to translate, copy, or replace it in place, with undo.
 - **Word Meaning Explorer:** contextual and literal meaning, Devanagari spelling, and ambiguity notes for every word and phrase.
 - **Six modes:** Accurate, Professional, Casual, Academic, Technical, and Grammar Correction.
+- **iPhone web app:** a private, installable companion at [digitsnepal.com/app](https://digitsnepal.com/app) for Romanized Nepali → English on the go. See [iPhone app](docs/IPHONE_APP.md).
 - **Meeting overlay:** a compact, translucent, always-on-top window that can be hidden from screen sharing.
 - **Model of your choice:** DigitsNepalAI runs locally with Ollama or LM Studio, or with your own key for Claude, Gemini, OpenAI, OpenRouter, Groq, Mistral, DeepSeek, Together, xAI, or any OpenAI-compatible server.
 
@@ -80,11 +81,13 @@ npm run check        # typecheck, tests, lint
 | `src-tauri/src/accessibility` | Selected-text capture and replacement via macOS Accessibility |
 | `src` | Desktop interface |
 | `tests/fixtures` | Nepali–English evaluation set (111 cases) |
+| `pwa` | iPhone web app (installable PWA) |
+| `worker` | Private translation API on Cloudflare Workers |
 | `website` | Source for digitsnepal.com |
 
 ## Documentation
 
-[Architecture](docs/ARCHITECTURE.md) · [Evaluation](docs/EVALUATION.md) · [Release process](docs/RELEASE.md) · [Changelog](CHANGELOG.md)
+[Architecture](docs/ARCHITECTURE.md) · [iPhone app](docs/IPHONE_APP.md) · [Evaluation](docs/EVALUATION.md) · [Release process](docs/RELEASE.md) · [Changelog](CHANGELOG.md)
 
 ## Contributing
 

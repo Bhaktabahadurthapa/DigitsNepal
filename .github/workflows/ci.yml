@@ -22,3 +22,17 @@ jobs:
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --manifest-path src-tauri/Cargo.toml
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --no-audit --no-fund
+        working-directory: worker
+      - run: npx tsc --noEmit && npx vitest run
+        working-directory: worker
+      - run: npm install --no-audit --no-fund
+        working-directory: pwa
+      - run: npm test && npm run build
+        working-directory: pwa

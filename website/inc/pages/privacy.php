@@ -21,6 +21,16 @@
     </ul>
   </div>
   <div class="reveal">
+    <h2>The iPhone web app (/app)</h2>
+    <ul>
+      <li><b>Private access.</b> The web app is for its owner only and requires an access code. Nothing secret is stored in the app's code.</li>
+      <li><b>Cloud translation.</b> Text you translate goes through DigitsNepal's private server to Google Gemini. DigitsNepal does not store or log it.</li>
+      <li><b>Google's free tier.</b> On Gemini's free tier, Google may keep and review submitted text to improve its products. Don't use it for confidential text.</li>
+      <li><b>History is off by default.</b> If you turn it on, it is kept only on that iPhone and can be deleted at any time.</li>
+      <li><b>No cookies.</b> The app stores only its sign-in token and settings on your device.</li>
+    </ul>
+  </div>
+  <div class="reveal">
     <h2>This website</h2>
     <ul>
       <li>No cookies, no analytics, no ads, no trackers.</li>

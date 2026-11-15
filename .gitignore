@@ -10,3 +10,4 @@ src-tauri/gen/schemas/
 *.cer
 *.mobileprovision
 eval-reports/
+!pwa/.env.production

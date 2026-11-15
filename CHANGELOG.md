@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- iPhone web app at digitsnepal.com/app: an installable PWA with Accurate, Professional and Grammar modes, word meanings, one-tap copy and share, light and dark appearance, and optional on-device history (off by default).
+- Private translation API on Cloudflare Workers: access-code sign-in with signed device tokens, origin lock, daily quota, burst and size limits, automatic Gemini model selection, and no content logging.
+
 ## 0.1.0 — 2026-11-14 (development release, unsigned)
 
 ### Added
