@@ -23,10 +23,8 @@ Type in Romanized Nepali, Devanagari, or a mix with English, and get natural Eng
 
 ## Overview
 
-```text
-Maile hijo meeting ma technical problem ko barema kura gareko thiye tara solution clear bhayena.
-→ I discussed the technical problem during yesterday's meeting, but the solution was not clear.
-```
+> **Maile hijo meeting ma technical problem ko barema kura gareko thiye tara solution clear bhayena.**<br>
+> I discussed the technical problem during yesterday's meeting, but the solution was not clear.
 
 DigitsNepal keeps the meaning, tense, negation and tone of what you wrote. The faithful translation always sits beside a polished version, and technical terms like *Kubernetes*, *AWS* or *pods* pass through unchanged.
 
