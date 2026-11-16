@@ -59,6 +59,8 @@ pub struct Config {
     pub backup_dir: PathBuf,
     /// Absolute path of the bundled `openworker-harness` runner, if known.
     pub runner: Option<PathBuf>,
+    /// Network endpoints for web and GitHub tools.
+    pub web: super::web::WebConfig,
 }
 
 pub struct Coworker {
@@ -70,6 +72,15 @@ pub struct Coworker {
     pending: Mutex<HashMap<String, Pending>>,
     hints: RwLock<HashMap<String, ToolHints>>,
     translator: Arc<RwLock<Option<Arc<dyn Translator>>>>,
+    /// Turns currently being driven (the engine is only reloaded when idle).
+    active: std::sync::atomic::AtomicUsize,
+}
+
+struct ActiveTurn<'a>(&'a std::sync::atomic::AtomicUsize);
+impl Drop for ActiveTurn<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -105,7 +116,129 @@ impl Coworker {
             pending: Mutex::new(HashMap::new()),
             hints: RwLock::new(HashMap::new()),
             translator: Arc::new(RwLock::new(None)),
+            active: std::sync::atomic::AtomicUsize::new(0),
         })
+    }
+
+    /// Qualified names of the MCP tools the user enabled.
+    pub fn enabled_mcp_tools(&self) -> Vec<String> {
+        self.ledger
+            .mcp_servers()
+            .into_iter()
+            .flat_map(|s| {
+                let ns = super::mcp::namespace(&s.name);
+                s.enabled.into_iter().map(move |t| format!("{ns}.{t}"))
+            })
+            .collect()
+    }
+
+    fn refresh_hints(&self) {
+        let mut h = HashMap::new();
+        for s in self.ledger.mcp_servers() {
+            let ns = super::mcp::namespace(&s.name);
+            for t in &s.tools {
+                h.insert(
+                    format!("{ns}.{}", t.name),
+                    ToolHints {
+                        read_only: t.read_only,
+                        destructive: t.destructive,
+                    },
+                );
+            }
+        }
+        *self.hints.write().unwrap() = h;
+    }
+
+    /// Add a remote MCP server: connect, list its tools, save it with every
+    /// tool disabled. The user then enables tools one by one.
+    pub async fn add_mcp_server(&self, name: &str, url: &str) -> Result<super::ledger::McpServerRow, CoworkerError> {
+        let name = name.trim().to_ascii_lowercase();
+        if !super::mcp::valid_name(&name, 20) {
+            return Err(CoworkerError::Setup(
+                "Use a short name: lowercase letters, digits or _ (e.g. notion).".into(),
+            ));
+        }
+        if self.ledger.mcp_servers().iter().any(|s| s.name == name) {
+            return Err(CoworkerError::Setup(
+                "A connected app with that name already exists.".into(),
+            ));
+        }
+        let tools = super::mcp::discover(url.trim()).await.map_err(CoworkerError::Setup)?;
+        let tools: Vec<_> = tools
+            .into_iter()
+            .filter(|t| super::mcp::valid_name(&t.name, 60))
+            .collect();
+        let row = super::ledger::McpServerRow {
+            name: name.clone(),
+            url: url.trim().to_string(),
+            tools,
+            enabled: Vec::new(),
+            created_at: super::ledger::now(),
+        };
+        self.ledger
+            .save_mcp_server(&row)
+            .map_err(|e| CoworkerError::Setup(e.to_string()))?;
+        self.ledger
+            .record(
+                "",
+                "user",
+                "mcp",
+                &name,
+                &json!(row.url),
+                "added",
+                &format!("{} tools", row.tools.len()),
+            )
+            .ok();
+        Ok(row)
+    }
+
+    /// Choose which of a connected app's tools Sahayogi may use.
+    pub async fn set_mcp_enabled(&self, name: &str, enabled: Vec<String>) -> Result<(), CoworkerError> {
+        let mut row = self
+            .ledger
+            .mcp_servers()
+            .into_iter()
+            .find(|s| s.name == name)
+            .ok_or_else(|| CoworkerError::Setup("Unknown connected app.".into()))?;
+        row.enabled = enabled
+            .into_iter()
+            .filter(|t| row.tools.iter().any(|x| &x.name == t))
+            .collect();
+        self.reload_tools().await?;
+        self.ledger
+            .save_mcp_server(&row)
+            .map_err(|e| CoworkerError::Setup(e.to_string()))?;
+        self.ledger
+            .record("", "user", "mcp", name, &json!(row.enabled), "tools_enabled", "")
+            .ok();
+        self.refresh_hints();
+        Ok(())
+    }
+
+    pub async fn remove_mcp_server(&self, name: &str) -> Result<(), CoworkerError> {
+        self.reload_tools().await?;
+        self.ledger
+            .delete_mcp_server(name)
+            .map_err(|e| CoworkerError::Setup(e.to_string()))?;
+        self.ledger
+            .record("", "user", "mcp", name, &Value::Null, "removed", "")
+            .ok();
+        self.refresh_hints();
+        Ok(())
+    }
+
+    /// Restart the engine so tool changes (connected apps) take effect.
+    /// Refused while a chat is running or waiting for the user.
+    pub async fn reload_tools(&self) -> Result<(), CoworkerError> {
+        if self.active.load(std::sync::atomic::Ordering::SeqCst) > 0 || !self.pending.lock().unwrap().is_empty() {
+            return Err(CoworkerError::Setup(
+                "Finish or stop the running chat first, then try again.".into(),
+            ));
+        }
+        self.shutdown().await;
+        self.sessions.lock().unwrap().clear();
+        self.refresh_hints();
+        Ok(())
     }
 
     /// Give agents access to DigitsNepal's translation engine.
@@ -143,11 +276,13 @@ impl Coworker {
                 .start()
                 .await
                 .map_err(|e| CoworkerError::Setup(format!("Sahayogi could not start: {e}")))?;
+            self.refresh_hints();
             register_tools(
                 &harness,
                 self.ledger.clone(),
                 self.cfg.backup_dir.clone(),
                 self.translator.clone(),
+                self.cfg.web.clone(),
             )
             .await?;
             *guard = Some(Engine {
@@ -226,7 +361,11 @@ impl Coworker {
         let mut guard = self.ensure_engine().await?;
         let engine = guard.as_mut().expect("engine started");
         let connection = self.ensure_connection(engine, spec).await?;
-        let def = agents::for_specialist(specialist, &connection, &spec.model);
+        let mut def = agents::for_specialist(specialist, &connection, &spec.model);
+        if specialist.key == "general" {
+            // Connected apps the user enabled are available to the general coworker.
+            def.tools.extend(self.enabled_mcp_tools());
+        }
         self.register_definition(engine, &def).await
     }
 
@@ -420,6 +559,8 @@ impl Coworker {
     }
 
     async fn drive(&self, sid: &str, session: &Session, input: Option<&str>) -> Result<(), CoworkerError> {
+        self.active.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let _turn = ActiveTurn(&self.active);
         let mut stream = match input {
             Some(text) => session.run_streamed(text).await,
             None => session.resume_streamed().await,
@@ -516,12 +657,15 @@ impl Coworker {
                 let q = qualified_name.clone().unwrap_or_else(|| tool.replacen("__", ".", 1));
                 let roots = self.ledger.granted_roots();
                 let hints = self.hints.read().unwrap().clone();
+                let ledger = self.ledger.clone();
+                let lookup = move |name: &str| tools::automation_steps(&ledger, name);
                 let decision = policy::evaluate(
                     &q,
                     arguments,
                     &policy::Context {
                         roots: &roots,
                         hints: &hints,
+                        automation: &lookup,
                     },
                 );
                 let response = match &decision {
@@ -700,6 +844,7 @@ async fn register_tools(
     ledger: Arc<Ledger>,
     backups: PathBuf,
     translator: Arc<RwLock<Option<Arc<dyn Translator>>>>,
+    web: super::web::WebConfig,
 ) -> Result<(), CoworkerError> {
     let mut by_ns: std::collections::BTreeMap<String, Vec<Tool>> = Default::default();
     let mut add = |qualified: &str, spec: &tools::ToolSpec| {
@@ -708,6 +853,7 @@ async fn register_tools(
         let ledger = ledger.clone();
         let backups = backups.clone();
         let translator = translator.clone();
+        let web = web.clone();
         let tool = Tool::new(short)
             .description(spec.description)
             .input_schema(spec.input_schema.clone())
@@ -716,6 +862,7 @@ async fn register_tools(
                     ledger: ledger.clone(),
                     backups: backups.clone(),
                     translator: translator.read().unwrap().clone(),
+                    web: web.clone(),
                 };
                 let name = name.clone();
                 async move { Ok(tools::run_guarded(&name, args, &deps, &ctx.session_id, ctx.cancellation()).await) }
@@ -728,6 +875,35 @@ async fn register_tools(
     for (old, _) in tools::LEGACY {
         if let Some(spec) = tools::spec(old) {
             add(old, &spec);
+        }
+    }
+    // Tools of connected MCP apps the user enabled.
+    for server in ledger.mcp_servers() {
+        let ns = super::mcp::namespace(&server.name);
+        for t in server.tools.iter().filter(|t| server.enabled.contains(&t.name)) {
+            let (url, remote, qualified) = (server.url.clone(), t.name.clone(), format!("{ns}.{}", t.name));
+            let ledger = ledger.clone();
+            let tool = Tool::new(t.name.clone())
+                .description(format!("[Connected app: {}] {}", server.name, t.description))
+                .input_schema(t.input_schema.clone())
+                .handler(move |args: Value, ctx| {
+                    let (url, remote, qualified, ledger) =
+                        (url.clone(), remote.clone(), qualified.clone(), ledger.clone());
+                    async move {
+                        let fut = super::mcp::call(&url, &remote, args.clone());
+                        Ok(tools::guard(
+                            &ledger,
+                            &ctx.session_id,
+                            &qualified,
+                            &args,
+                            std::time::Duration::from_secs(60),
+                            Some(ctx.cancellation()),
+                            fut,
+                        )
+                        .await)
+                    }
+                });
+            by_ns.entry(ns.clone()).or_default().push(tool);
         }
     }
     for (ns, list) in by_ns {

@@ -80,6 +80,46 @@ Each specialist is stored as its own immutable, versioned definition
 arrive with the Phase 5 tools; until then those specialists say so instead of
 pretending.
 
+## Tools (Phase 5)
+
+| Tool | Risk class | What it does | Limits |
+|---|---|---|---|
+| `browser.search` | egress (asks) | DuckDuckGo results: title, link, snippet | 10 results, 30 s |
+| `browser.open` | egress (asks) | Readable text of a public page | http/https only; 2 MB; 5 redirects |
+| `research.summarize` | read | Extractive, cited source pack (S1, S2…) from files and text | 10 sources; paths must be granted |
+| `documents.create` | write_local (asks) | Titled Markdown / HTML / text document | extension must match format; backs up |
+| `github.search` | egress (asks) | Public repositories or issues/PRs | read-only, unauthenticated |
+| `github.inspect` | egress (asks) | Repo summary + README, or a path's listing/text | `owner/name` validated |
+| `automation.create` | asks | Save a named list of ≤ 20 tool steps | steps validated; no nesting |
+| `automation.list` | read | Saved automations | — |
+| `automation.run` | asks per run | Run a saved automation | each step re-checked; stops at first failure |
+
+**Network safety.** Every request resolves the host itself, refuses
+private, loopback, link-local, carrier-NAT and other non-public addresses
+(IPv4 and IPv6, including IPv4-mapped), pins the connection to the checked
+address so DNS cannot be switched mid-request, and re-checks every redirect.
+Results are marked `untrusted_content`; the instructions tell every specialist
+to treat them as data. Search queries go to DuckDuckGo only after approval.
+
+**Automations.** Steps may use only DigitsNepal's typed file, document,
+translation, research, browser and GitHub tools — never commands, connected
+apps, other automations, or anything on the hard-floor list. Running one asks
+you with every step listed (an automation whose steps only read inside granted
+folders runs without asking). Each step is checked again by the policy at run
+time, so a revoked folder stops the run. Automations run only when started
+from a chat; there is no scheduler yet. Delete them under **Tools & Apps**.
+
+**Connected apps (MCP).** Add a remote MCP server (https, or http on this Mac)
+under **Tools & Apps**. DigitsNepal's own MCP client lists its tools; every
+tool starts **off** and you switch on the ones Sahayogi may use. Enabled tools
+go to the general Sahayogi only. Server annotations can only make a call
+stricter: "read-only" tools ask (and may be allowed for the chat),
+"destructive" tools are hard-floor, everything else asks every time, and
+names like `send_email` stay hard-floor whatever the server claims. Changing
+connected apps restarts the engine, so it is refused while a chat is running.
+Not yet supported: servers that need a login token, and local MCP programs
+(they would run code outside a sandbox).
+
 ## What runs automatically, what asks, what is refused
 
 | Action | Decision |

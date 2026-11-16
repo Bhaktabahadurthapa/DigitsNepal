@@ -5,6 +5,9 @@ export type Decision = "once" | "session" | "deny";
 export interface Grant { id: number; path: string; created_at: number }
 export interface SessionRow { id: string; agent: string; specialist: string; title: string; created_at: number; updated_at: number }
 export interface Specialist { key: string; name: string; nepali: string; summary: string; icon: string; version: number; tools: string[]; examples: string[] }
+export interface McpTool { name: string; description: string; input_schema: unknown; read_only: boolean; destructive: boolean }
+export interface McpServer { name: string; url: string; tools: McpTool[]; enabled: string[]; created_at: number }
+export interface Automation { id: number; name: string; description: string; steps: { tool: string; args: Record<string, unknown>; note?: string }[]; created_at: number; last_run_at: number | null; runs: number }
 export interface Message { role: string; text: string; ts: number }
 export interface Status { provider_ready: boolean; provider_problem: string | null; model: string | null; grants: Grant[]; audit_intact: boolean }
 export interface AuditEntry { seq: number; ts: number; session: string; actor: string; kind: string; tool: string; args_digest: string; decision: string; detail: string; hash: string }
@@ -36,6 +39,12 @@ export const cw = {
   messages: (session: string) => invoke<Message[]>("coworker_messages", { session }),
   newSession: (specialist?: string) => invoke<SessionRow>("coworker_new_session", { specialist: specialist ?? null }),
   specialists: () => invoke<Specialist[]>("coworker_specialists"),
+  mcpServers: () => invoke<McpServer[]>("coworker_mcp_servers"),
+  mcpAdd: (name: string, url: string) => invoke<McpServer>("coworker_mcp_add", { name, url }),
+  mcpEnable: (name: string, tools: string[]) => invoke<void>("coworker_mcp_enable", { name, tools }),
+  mcpRemove: (name: string) => invoke<void>("coworker_mcp_remove", { name }),
+  automations: () => invoke<Automation[]>("coworker_automations"),
+  deleteAutomation: (id: number) => invoke<void>("coworker_automation_delete", { id }),
   send: (session: string, text: string) => invoke<void>("coworker_send", { session, text }),
   decide: (id: string, decision: Decision) => invoke<boolean>("coworker_decide", { id, decision }),
   answer: (id: string, text: string) => invoke<boolean>("coworker_answer", { id, text }),

@@ -303,6 +303,7 @@ pub fn run() {
                         workspace_dir: data.join("coworker").join("workspace"),
                         backup_dir: data.join("coworker").join("backups"),
                         runner: None,
+                        web: Default::default(),
                     },
                     sink,
                 );
@@ -392,6 +393,12 @@ pub fn run() {
             #[cfg(feature = "coworker")]
             commands::coworker::coworker_pending,
             commands::coworker::coworker_specialists,
+            commands::coworker::coworker_mcp_servers,
+            commands::coworker::coworker_mcp_add,
+            commands::coworker::coworker_mcp_enable,
+            commands::coworker::coworker_mcp_remove,
+            commands::coworker::coworker_automations,
+            commands::coworker::coworker_automation_delete,
             #[cfg(feature = "coworker")]
             commands::coworker::coworker_resume,
             #[cfg(feature = "coworker")]

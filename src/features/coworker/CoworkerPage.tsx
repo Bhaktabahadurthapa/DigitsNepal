@@ -413,8 +413,8 @@ function ApprovalCard({ item, who, onDecide }: { item: Extract<Item, { kind: "ap
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[13.5px] font-semibold">{who} wants to: {label(item.tool).toLowerCase()}</p>
-          {path && <p className="mt-0.5 truncate font-mono text-[11.5px] text-muted" title={path}>{path}</p>}
-          <p className="mt-1 text-[12.5px] text-muted">{item.reason}</p>
+          {(path ?? target(item.args)) && <p className="mt-0.5 truncate font-mono text-[11.5px] text-muted" title={path ?? target(item.args) ?? ""}>{path ?? target(item.args)}</p>}
+          <p className="mt-1 whitespace-pre-line text-[12.5px] text-muted">{item.reason}</p>
           <button onClick={() => setOpen((o) => !o)} aria-expanded={open} className="mt-1.5 flex items-center gap-1 text-[12px] font-medium text-accent-fg">
             <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} aria-hidden /> {open ? "Hide details" : "Show details"}
           </button>
@@ -438,6 +438,14 @@ function ApprovalCard({ item, who, onDecide }: { item: Extract<Item, { kind: "ap
       </div>
     </li>
   );
+}
+
+/** The URL, query or repository an approval is about, for the card header. */
+function target(args: unknown): string | null {
+  if (typeof args !== "object" || !args) return null;
+  const a = args as Record<string, unknown>;
+  const v = a.url ?? a.query ?? a.repo ?? a.name;
+  return typeof v === "string" ? v : null;
 }
 
 function QuestionCard({ item, onAnswer }: { item: Extract<Item, { kind: "question" }>; onAnswer: (id: string, a: string) => void }) {
@@ -467,6 +475,15 @@ const LABELS: Record<string, string> = {
   "files.read_pdf": "Reading a PDF",
   "files.create": "Write a file",
   "files.move": "Move a file",
+  "browser.search": "Search the web",
+  "browser.open": "Open a web page",
+  "research.summarize": "Collecting cited points",
+  "documents.create": "Create a document",
+  "github.search": "Search GitHub",
+  "github.inspect": "Look at a GitHub project",
+  "automation.create": "Save an automation",
+  "automation.list": "Checking saved automations",
+  "automation.run": "Run an automation",
   // Conversations from earlier versions
   "dn.understand_text": "Understanding your Nepali",
   "dn.granted_folders": "Checking your shared folders",
@@ -476,5 +493,6 @@ const LABELS: Record<string, string> = {
   "dn.read_pdf": "Reading a PDF",
   "dn.write_file": "Write a file",
 };
-export const label = (tool: string) => LABELS[tool] ?? tool;
+export const label = (tool: string) =>
+  LABELS[tool] ?? (tool.startsWith("mcp_") ? `${tool.slice(4).replace(".", ": ")} (connected app)` : tool);
 

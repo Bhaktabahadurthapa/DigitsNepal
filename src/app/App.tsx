@@ -1,9 +1,10 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
-import { Activity, BookOpen, Clock, Keyboard, Languages, Settings as SettingsIcon, Sparkles, type LucideIcon } from "lucide-react";
+import { Activity, BookOpen, Clock, Keyboard, Languages, Plug, Settings as SettingsIcon, Sparkles, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ActivityPage } from "../features/coworker/ActivityPage";
 import { CoworkerPage } from "../features/coworker/CoworkerPage";
+import { ToolsPage } from "../features/coworker/ToolsPage";
 import { WordExplorer } from "../features/dictionary/WordExplorer";
 import { HistoryPage } from "../features/history/HistoryPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -13,24 +14,26 @@ import { useAppearance } from "../hooks/useAppearance";
 import { isTauri } from "../providers/api";
 import type { WordMeaning } from "../types/translation";
 
-type Tab = "translate" | "coworker" | "activity" | "explorer" | "history" | "settings";
+type Tab = "translate" | "coworker" | "tools" | "activity" | "explorer" | "history" | "settings";
 const TABS: { id: Tab; label: string; key: string }[] = [
   { id: "translate", label: "Translate", key: "1" },
   { id: "coworker", label: "Sahayogi", key: "2" },
   { id: "activity", label: "Activity", key: "3" },
   { id: "explorer", label: "Word Explorer", key: "4" },
   { id: "history", label: "History", key: "5" },
+  { id: "tools", label: "Tools & Apps", key: "6" },
   { id: "settings", label: "Settings", key: "," },
 ];
 const NAV_GROUPS: { title: string; tabs: Tab[] }[] = [
   { title: "Language", tabs: ["translate", "explorer", "history"] },
-  { title: "Assistant", tabs: ["coworker", "activity"] },
+  { title: "Assistant", tabs: ["coworker", "tools", "activity"] },
   { title: "App", tabs: ["settings"] },
 ];
 const ICONS: Record<Tab, LucideIcon> = {
   translate: Languages,
   coworker: Sparkles,
   activity: Activity,
+  tools: Plug,
   explorer: BookOpen,
   history: Clock,
   settings: SettingsIcon,
@@ -155,6 +158,7 @@ export function App() {
         <div className={overlay ? "h-[calc(100%-0.375rem)]" : "h-[calc(100%-0.75rem)]"}>
           {tab === "translate" && <TranslatePage key={reuse?.n ?? 0} overlay={overlay} onToggleOverlay={toggleOverlay} settings={settings} onOpenSettings={() => setTab("settings")} onExplore={(text, meanings) => { setExplore({ text, meanings }); setTab("explorer"); }} {...(reuse ? { initial: reuse.text } : {})} />}
           {tab === "coworker" && <CoworkerPage onOpenSettings={() => setTab("settings")} />}
+          {tab === "tools" && <ToolsPage />}
           {tab === "activity" && <ActivityPage />}
           {tab === "explorer" && <WordExplorer initialText={explore.text} initialMeanings={explore.meanings} />}
           {tab === "history" && <HistoryPage settings={settings} onEnable={() => update({ history_enabled: true })} onReuse={(text) => { setReuse({ text, n: Date.now() }); setTab("translate"); }} />}

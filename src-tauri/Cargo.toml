@@ -37,6 +37,7 @@ anyhow = { version = "1", optional = true }
 # Coworker governance store (same rusqlite as the Harness, so one SQLite build).
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
+base64 = "0.22"
 tauri-plugin-dialog = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]

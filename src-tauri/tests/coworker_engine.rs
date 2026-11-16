@@ -194,6 +194,7 @@ async fn rig(script: Script, dir: Option<tempfile::TempDir>) -> Option<Rig> {
             workspace_dir: dir.path().join("workspace"),
             backup_dir: dir.path().join("backups"),
             runner: Some(runner),
+            web: digitsnepal_lib::coworker::web::WebConfig::default(),
         },
         sink,
     );
@@ -692,7 +693,7 @@ async fn a_read_only_specialist_cannot_write_even_if_the_model_tries() {
     *target.lock().unwrap() = forged.display().to_string();
     let s = r.cw.new_session_as(&r.spec, "research").await.unwrap();
     assert_eq!(s.specialist, "research");
-    assert!(s.agent.starts_with("dn-research-v1-"));
+    assert!(s.agent.starts_with("dn-research-v2-"));
     r.cw.send(&s.id, "write a file", &r.spec).await.unwrap();
     wait_for(&r.events, |v| v["type"] == "done" || v["type"] == "error").await;
     let tools = seen.lock().unwrap().clone();
@@ -726,5 +727,225 @@ async fn each_specialist_gets_its_own_definition_and_unknown_ones_are_refused() 
     }
     assert_eq!(agents.len(), 6);
     assert!(r.cw.new_session_as(&r.spec, "admin").await.is_err());
+    r.cw.shutdown().await;
+}
+
+/// A tiny HTTP server: `handler(path, body) -> (status, content_type, body)`.
+/// Returns the base URL and a hit counter.
+type Handler = Arc<dyn Fn(&str, &Value) -> (u16, &'static str, String) + Send + Sync>;
+
+async fn http_server(handler: Handler) -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let h2 = hits.clone();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            h2.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let handler = handler.clone();
+            tokio::spawn(async move {
+                let mut data = Vec::new();
+                let mut buf = [0u8; 8192];
+                let end = loop {
+                    let k = stream.read(&mut buf).await.unwrap_or(0);
+                    if k == 0 {
+                        return;
+                    }
+                    data.extend_from_slice(&buf[..k]);
+                    if let Some(e) = data.windows(4).position(|w| w == b"\r\n\r\n") {
+                        break e + 4;
+                    }
+                };
+                let head = String::from_utf8_lossy(&data[..end]).to_string();
+                let path = head.split_whitespace().nth(1).unwrap_or("/").to_string();
+                let len: usize = head
+                    .to_ascii_lowercase()
+                    .lines()
+                    .find_map(|l| l.strip_prefix("content-length: ").map(|v| v.trim().to_string()))
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0);
+                while data.len() < end + len {
+                    let k = stream.read(&mut buf).await.unwrap_or(0);
+                    if k == 0 {
+                        break;
+                    }
+                    data.extend_from_slice(&buf[..k]);
+                }
+                let body: Value = serde_json::from_slice(&data[end..]).unwrap_or(Value::Null);
+                let (status, ct, out) = handler(&path, &body);
+                let _ = stream
+                    .write_all(
+                        format!(
+                            "HTTP/1.1 {status} OK\r\nContent-Type: {ct}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{out}",
+                            out.len()
+                        )
+                        .as_bytes(),
+                    )
+                    .await;
+            });
+        }
+    });
+    (url, hits)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn browser_open_never_reaches_a_local_address_even_when_approved() {
+    let (local, hits) = http_server(Arc::new(|_, _| (200, "text/html", "<p>router admin</p>".into()))).await;
+    let target = format!("{local}/admin");
+    let t2 = target.clone();
+    let seen = Arc::new(Mutex::new(String::new()));
+    let s2 = seen.clone();
+    let script: Script = Arc::new(move |req| {
+        let r = tool_results(req);
+        if r.is_empty() {
+            Reply::Tool {
+                name_suffix: "browser__open",
+                args: json!({"url": t2}),
+            }
+        } else {
+            *s2.lock().unwrap() = r[0].clone();
+            Reply::Text("That address is on a private network, so I could not open it.".into())
+        }
+    });
+    let Some(r) = rig(script, None).await else { return };
+    let before = hits.load(std::sync::atomic::Ordering::SeqCst);
+    let s = r.cw.new_session_as(&r.spec, "research").await.unwrap();
+    r.cw.send(&s.id, "open my router page", &r.spec).await.unwrap();
+    let ask = wait_for(&r.events, |v| v["type"] == "approval_required").await;
+    assert_eq!(ask["tool"], "browser.open");
+    assert!(r.cw.decide(ask["id"].as_str().unwrap(), UserDecision::Once));
+    wait_for(&r.events, |v| v["type"] == "done").await;
+    assert!(
+        seen.lock().unwrap().contains("private or local"),
+        "{}",
+        seen.lock().unwrap()
+    );
+    assert_eq!(
+        hits.load(std::sync::atomic::Ordering::SeqCst),
+        before,
+        "no request reached the local server"
+    );
+    r.cw.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_automation_is_saved_then_run_with_every_step_shown() {
+    let target = Arc::new(Mutex::new(String::new()));
+    let t2 = target.clone();
+    let script: Script = Arc::new(move |req| {
+        let r = tool_results(req);
+        let (minutes, brief) = {
+            let t = t2.lock().unwrap();
+            let (a, b) = t.split_once('|').unwrap();
+            (a.to_string(), b.to_string())
+        };
+        match r.len() {
+            0 => Reply::Tool {
+                name_suffix: "automation__create",
+                args: json!({"name": "weekly-brief", "description": "Turn the minutes into a brief", "steps": [
+                    {"tool": "files.read", "args": {"path": minutes}},
+                    {"tool": "documents.create", "args": {"path": brief, "title": "Weekly brief", "format": "markdown", "sections": [{"heading": "Decision", "body": "Ship v2 on Friday."}]}}
+                ]}),
+            },
+            1 => Reply::Tool {
+                name_suffix: "automation__run",
+                args: json!({"name": "weekly-brief"}),
+            },
+            _ => Reply::Text("Saved and ran weekly-brief.".into()),
+        }
+    });
+    let Some(r) = rig(script, None).await else { return };
+    let brief = r.granted.join("brief.md");
+    *target.lock().unwrap() = format!("{}|{}", r.granted.join("minutes.txt").display(), brief.display());
+    let s = r.cw.new_session_as(&r.spec, "automation").await;
+    // The planner is read-only; the general coworker can save and run automations.
+    assert!(s.is_ok());
+    let s = r.cw.new_session(&r.spec).await.unwrap();
+    r.cw.send(&s.id, "make it an automation and run it", &r.spec)
+        .await
+        .unwrap();
+    let create = wait_for(&r.events, |v| {
+        v["type"] == "approval_required" && v["tool"] == "automation.create"
+    })
+    .await;
+    assert!(create["reason"].as_str().unwrap().contains("2. documents.create"));
+    assert!(r.cw.decide(create["id"].as_str().unwrap(), UserDecision::Once));
+    let run = wait_for(&r.events, |v| {
+        v["type"] == "approval_required" && v["tool"] == "automation.run"
+    })
+    .await;
+    assert_eq!(run["standing_ok"], false);
+    assert!(run["reason"].as_str().unwrap().contains("1. files.read"));
+    assert!(!brief.exists(), "nothing runs before approval");
+    assert!(r.cw.decide(run["id"].as_str().unwrap(), UserDecision::Once));
+    wait_for(&r.events, |v| v["type"] == "done").await;
+    assert!(std::fs::read_to_string(&brief).unwrap().contains("Ship v2 on Friday."));
+    let a = r.cw.ledger.automation("weekly-brief").unwrap();
+    assert_eq!(a.runs, 1);
+    let steps =
+        r.cw.ledger
+            .recent(100)
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.kind == "automation_step")
+            .count();
+    assert_eq!(steps, 2);
+    r.cw.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_connected_mcp_app_only_exposes_enabled_tools_and_asks_first() {
+    let (mcp, _) = http_server(Arc::new(|_, body| {
+        let id = body["id"].clone();
+        let result = match body["method"].as_str().unwrap_or("") {
+            "initialize" => json!({"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "serverInfo": {"name": "demo", "version": "1"}}),
+            "tools/list" => json!({"tools": [
+                {"name": "lookup", "description": "Look up a fact", "inputSchema": {"type": "object", "properties": {"q": {"type": "string"}}}, "annotations": {"readOnlyHint": true, "destructiveHint": false}},
+                {"name": "wipe", "description": "Delete everything", "inputSchema": {"type": "object"}, "annotations": {"destructiveHint": true}}
+            ]}),
+            "tools/call" => json!({"content": [{"type": "text", "text": format!("Answer for {}: Kathmandu", body["params"]["arguments"]["q"].as_str().unwrap_or(""))}]}),
+            _ => return (202, "application/json", String::new()),
+        };
+        // Reply as server-sent events, as many MCP servers do.
+        (200, "text/event-stream", format!("event: message\ndata: {}\n\n", json!({"jsonrpc": "2.0", "id": id, "result": result})))
+    }))
+    .await;
+    let seen = Arc::new(Mutex::new((Vec::<String>::new(), String::new())));
+    let s2 = seen.clone();
+    let script: Script = Arc::new(move |req| {
+        let r = tool_results(req);
+        if r.is_empty() {
+            s2.lock().unwrap().0 = offered(req);
+            Reply::Tool {
+                name_suffix: "mcp_demo__lookup",
+                args: json!({"q": "capital of Nepal"}),
+            }
+        } else {
+            s2.lock().unwrap().1 = r[0].clone();
+            Reply::Text("Kathmandu.".into())
+        }
+    });
+    let Some(r) = rig(script, None).await else { return };
+    let row = r.cw.add_mcp_server("demo", &format!("{mcp}/mcp")).await.unwrap();
+    assert_eq!(row.tools.len(), 2);
+    assert!(row.enabled.is_empty(), "tools start disabled");
+    r.cw.set_mcp_enabled("demo", vec!["lookup".into()]).await.unwrap();
+    let s = r.cw.new_session(&r.spec).await.unwrap();
+    r.cw.send(&s.id, "capital of Nepal?", &r.spec).await.unwrap();
+    let ask = wait_for(&r.events, |v| v["type"] == "approval_required").await;
+    assert_eq!(ask["tool"], "mcp_demo.lookup");
+    assert_eq!(ask["standing_ok"], true);
+    assert!(r.cw.decide(ask["id"].as_str().unwrap(), UserDecision::Once));
+    wait_for(&r.events, |v| v["type"] == "done").await;
+    let (tools, result) = seen.lock().unwrap().clone();
+    assert!(
+        !tools.iter().any(|t| t.contains("wipe")),
+        "disabled tool offered: {tools:?}"
+    );
+    assert!(result.contains("Kathmandu"), "{result}");
+    assert!(r.cw.add_mcp_server("Bad Name", "https://x.org/mcp").await.is_err());
     r.cw.shutdown().await;
 }

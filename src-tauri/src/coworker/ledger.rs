@@ -77,6 +77,37 @@ pub struct Ledger {
     conn: Mutex<Connection>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct AutomationRow {
+    pub id: i64,
+    pub name: String,
+    pub description: String,
+    pub steps: Value,
+    pub created_at: i64,
+    pub last_run_at: Option<i64>,
+    pub runs: i64,
+}
+
+/// A remote MCP server the user added, with the tools it reported and the
+/// ones the user enabled for Sahayogi.
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq)]
+pub struct McpServerRow {
+    pub name: String,
+    pub url: String,
+    pub tools: Vec<McpToolInfo>,
+    pub enabled: Vec<String>,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq)]
+pub struct McpToolInfo {
+    pub name: String,
+    pub description: String,
+    pub input_schema: Value,
+    pub read_only: bool,
+    pub destructive: bool,
+}
+
 pub fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -142,6 +173,11 @@ impl Ledger {
                id INTEGER PRIMARY KEY, session TEXT NOT NULL, model TEXT NOT NULL, input_tokens INTEGER NOT NULL,
                output_tokens INTEGER NOT NULL, ts INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS automations(
+               id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT NOT NULL, steps TEXT NOT NULL,
+               created_at INTEGER NOT NULL, last_run_at INTEGER, runs INTEGER NOT NULL DEFAULT 0);
+             CREATE TABLE IF NOT EXISTS mcp_servers(
+               name TEXT PRIMARY KEY, url TEXT NOT NULL, tools TEXT NOT NULL, enabled TEXT NOT NULL, created_at INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS messages(
                id INTEGER PRIMARY KEY, session TEXT NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL, ts INTEGER NOT NULL);
              CREATE INDEX IF NOT EXISTS messages_session ON messages(session, id);
@@ -151,6 +187,101 @@ impl Ledger {
                detail TEXT NOT NULL, prev_hash TEXT NOT NULL, hash TEXT NOT NULL);",
         )?;
         Ok(Self { conn: Mutex::new(conn) })
+    }
+
+    // ---- Automations ----------------------------------------------------------
+
+    /// Save a new automation; names are unique and an automation never changes.
+    pub fn add_automation(&self, name: &str, description: &str, steps: &Value) -> Result<i64, LedgerError> {
+        let c = self.conn.lock().unwrap();
+        c.execute(
+            "INSERT INTO automations(name, description, steps, created_at) VALUES(?1,?2,?3,?4)",
+            params![name, description, steps.to_string(), now()],
+        )?;
+        Ok(c.last_insert_rowid())
+    }
+
+    pub fn automations(&self) -> Result<Vec<AutomationRow>, LedgerError> {
+        let c = self.conn.lock().unwrap();
+        let mut st = c.prepare(
+            "SELECT id, name, description, steps, created_at, last_run_at, runs FROM automations ORDER BY name",
+        )?;
+        let rows = st.query_map([], |r| {
+            Ok(AutomationRow {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                description: r.get(2)?,
+                steps: serde_json::from_str(&r.get::<_, String>(3)?).unwrap_or(Value::Null),
+                created_at: r.get(4)?,
+                last_run_at: r.get(5)?,
+                runs: r.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn automation(&self, name: &str) -> Option<AutomationRow> {
+        self.automations().ok()?.into_iter().find(|a| a.name == name)
+    }
+
+    pub fn mark_automation_run(&self, name: &str) {
+        let _ = self.conn.lock().unwrap().execute(
+            "UPDATE automations SET runs = runs + 1, last_run_at = ?1 WHERE name = ?2",
+            params![now(), name],
+        );
+    }
+
+    /// Only the user removes automations (from the UI).
+    pub fn delete_automation(&self, id: i64) -> Result<(), LedgerError> {
+        self.conn
+            .lock()
+            .unwrap()
+            .execute("DELETE FROM automations WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // ---- MCP servers ----------------------------------------------------------
+
+    pub fn save_mcp_server(&self, row: &McpServerRow) -> Result<(), LedgerError> {
+        self.conn.lock().unwrap().execute(
+            "INSERT INTO mcp_servers(name, url, tools, enabled, created_at) VALUES(?1,?2,?3,?4,?5)
+             ON CONFLICT(name) DO UPDATE SET tools=excluded.tools, enabled=excluded.enabled",
+            params![
+                row.name,
+                row.url,
+                serde_json::to_string(&row.tools).unwrap_or_default(),
+                serde_json::to_string(&row.enabled).unwrap_or_default(),
+                row.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn mcp_servers(&self) -> Vec<McpServerRow> {
+        let c = self.conn.lock().unwrap();
+        let Ok(mut st) = c.prepare("SELECT name, url, tools, enabled, created_at FROM mcp_servers ORDER BY name")
+        else {
+            return Vec::new();
+        };
+        st.query_map([], |r| {
+            Ok(McpServerRow {
+                name: r.get(0)?,
+                url: r.get(1)?,
+                tools: serde_json::from_str(&r.get::<_, String>(2)?).unwrap_or_default(),
+                enabled: serde_json::from_str(&r.get::<_, String>(3)?).unwrap_or_default(),
+                created_at: r.get(4)?,
+            })
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    pub fn delete_mcp_server(&self, name: &str) -> Result<(), LedgerError> {
+        self.conn
+            .lock()
+            .unwrap()
+            .execute("DELETE FROM mcp_servers WHERE name = ?1", params![name])?;
+        Ok(())
     }
 
     // ---- Folder grants ------------------------------------------------------

@@ -230,6 +230,60 @@ pub fn coworker_activity(limit: Option<usize>, cw: State<CoworkerState>) -> CmdR
     })
 }
 
+// ---- Connected apps (remote MCP servers) and automations -----------------
+
+#[tauri::command]
+pub fn coworker_mcp_servers(cw: State<CoworkerState>) -> Vec<crate::coworker::ledger::McpServerRow> {
+    cw.0.ledger.mcp_servers()
+}
+
+#[tauri::command]
+pub async fn coworker_mcp_add(
+    name: String,
+    url: String,
+    cw: State<'_, CoworkerState>,
+) -> CmdResult<crate::coworker::ledger::McpServerRow> {
+    cw.0.add_mcp_server(&name, &url)
+        .await
+        .map_err(|e| err("mcp", e.to_string()))
+}
+
+#[tauri::command]
+pub async fn coworker_mcp_enable(name: String, tools: Vec<String>, cw: State<'_, CoworkerState>) -> CmdResult<()> {
+    cw.0.set_mcp_enabled(&name, tools)
+        .await
+        .map_err(|e| err("mcp", e.to_string()))
+}
+
+#[tauri::command]
+pub async fn coworker_mcp_remove(name: String, cw: State<'_, CoworkerState>) -> CmdResult<()> {
+    cw.0.remove_mcp_server(&name)
+        .await
+        .map_err(|e| err("mcp", e.to_string()))
+}
+
+#[tauri::command]
+pub fn coworker_automations(cw: State<CoworkerState>) -> CmdResult<Vec<crate::coworker::ledger::AutomationRow>> {
+    cw.0.ledger.automations().map_err(le)
+}
+
+#[tauri::command]
+pub fn coworker_automation_delete(id: i64, cw: State<CoworkerState>) -> CmdResult<()> {
+    cw.0.ledger.delete_automation(id).map_err(le)?;
+    cw.0.ledger
+        .record(
+            "",
+            "user",
+            "automation",
+            "",
+            &serde_json::Value::Null,
+            "deleted",
+            &id.to_string(),
+        )
+        .map_err(le)?;
+    Ok(())
+}
+
 /// The specialists a conversation can start with (for the picker).
 #[tauri::command]
 pub fn coworker_specialists() -> Vec<crate::coworker::specialists::Specialist> {

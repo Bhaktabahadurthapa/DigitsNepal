@@ -9,9 +9,11 @@
 //! * `service`  — the OpenWorker Harness runtime and session/approval loop
 
 pub mod agents;
+pub mod documents;
 pub mod files;
 pub mod language;
 pub mod ledger;
+pub mod mcp;
 pub mod policy;
 pub mod providers;
 #[cfg(feature = "coworker")]
@@ -20,3 +22,4 @@ pub mod relay;
 pub mod service;
 pub mod specialists;
 pub mod tools;
+pub mod web;
