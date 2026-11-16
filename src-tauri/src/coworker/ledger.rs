@@ -77,6 +77,33 @@ pub struct Ledger {
     conn: Mutex<Connection>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct TaskRow {
+    pub id: String,
+    pub session: String,
+    pub specialist: String,
+    pub request: String,
+    /// Offline understanding (`intent::IntentHints`).
+    pub intent: Value,
+    /// The agent's validated plan, with step statuses.
+    pub plan: Value,
+    pub evidence: Value,
+    pub result: Value,
+    pub state: String,
+    pub state_reason: String,
+    pub paused: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum TaskField {
+    Intent,
+    Plan,
+    Evidence,
+    Result,
+}
+
 /// Global safety switches, set only by the user in the Security Center.
 #[derive(Debug, Clone, Copy, Default, Serialize, serde::Deserialize, PartialEq)]
 pub struct Security {
@@ -195,6 +222,19 @@ impl Ledger {
              CREATE TABLE IF NOT EXISTS automations(
                id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT NOT NULL, steps TEXT NOT NULL,
                created_at INTEGER NOT NULL, last_run_at INTEGER, runs INTEGER NOT NULL DEFAULT 0);
+             CREATE TABLE IF NOT EXISTS tasks(
+               id TEXT PRIMARY KEY, session TEXT NOT NULL, specialist TEXT NOT NULL, request TEXT NOT NULL,
+               intent TEXT NOT NULL, plan TEXT NOT NULL, evidence TEXT NOT NULL, result TEXT NOT NULL,
+               state TEXT NOT NULL, state_reason TEXT NOT NULL, paused INTEGER NOT NULL DEFAULT 0,
+               created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+             CREATE INDEX IF NOT EXISTS tasks_session ON tasks(session);
+             CREATE TABLE IF NOT EXISTS task_events(
+               id INTEGER PRIMARY KEY, task TEXT NOT NULL, ts INTEGER NOT NULL, kind TEXT NOT NULL,
+               from_state TEXT NOT NULL, to_state TEXT NOT NULL, detail TEXT NOT NULL);
+             CREATE INDEX IF NOT EXISTS task_events_task ON task_events(task, id);
+             CREATE TABLE IF NOT EXISTS tool_results(
+               session TEXT NOT NULL, tool TEXT NOT NULL, digest TEXT NOT NULL, result TEXT NOT NULL, ts INTEGER NOT NULL,
+               PRIMARY KEY(session, tool, digest));
              CREATE TABLE IF NOT EXISTS standing_approvals(
                session TEXT NOT NULL, tool TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(session, tool));
              CREATE TABLE IF NOT EXISTS mcp_servers(
@@ -259,6 +299,184 @@ impl Ledger {
             .unwrap()
             .execute("DELETE FROM automations WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    // ---- Tasks ------------------------------------------------------------------
+
+    pub fn insert_task(&self, t: &TaskRow) -> Result<(), LedgerError> {
+        self.conn.lock().unwrap().execute(
+            "INSERT INTO tasks(id, session, specialist, request, intent, plan, evidence, result, state, state_reason, paused, created_at, updated_at)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+            params![
+                t.id, t.session, t.specialist, t.request, t.intent.to_string(), t.plan.to_string(),
+                t.evidence.to_string(), t.result.to_string(), t.state, t.state_reason, t.paused as i64,
+                t.created_at, t.updated_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn task_rows(&self, filter: &str, arg: Option<&str>) -> Vec<TaskRow> {
+        let c = self.conn.lock().unwrap();
+        let sql = format!(
+            "SELECT id, session, specialist, request, intent, plan, evidence, result, state, state_reason, paused, created_at, updated_at
+             FROM tasks {filter} ORDER BY updated_at DESC LIMIT 200"
+        );
+        let Ok(mut st) = c.prepare(&sql) else { return Vec::new() };
+        let map = |r: &rusqlite::Row| {
+            let j = |i: usize| -> rusqlite::Result<Value> {
+                Ok(serde_json::from_str(&r.get::<_, String>(i)?).unwrap_or(Value::Null))
+            };
+            Ok(TaskRow {
+                id: r.get(0)?,
+                session: r.get(1)?,
+                specialist: r.get(2)?,
+                request: r.get(3)?,
+                intent: j(4)?,
+                plan: j(5)?,
+                evidence: j(6)?,
+                result: j(7)?,
+                state: r.get(8)?,
+                state_reason: r.get(9)?,
+                paused: r.get::<_, i64>(10)? != 0,
+                created_at: r.get(11)?,
+                updated_at: r.get(12)?,
+            })
+        };
+        let rows = match arg {
+            Some(a) => st.query_map(params![a], map),
+            None => st.query_map([], map),
+        };
+        rows.map(|r| r.filter_map(Result::ok).collect()).unwrap_or_default()
+    }
+
+    pub fn tasks(&self) -> Vec<TaskRow> {
+        self.task_rows("", None)
+    }
+
+    pub fn task(&self, id: &str) -> Option<TaskRow> {
+        self.task_rows("WHERE id = ?1", Some(id)).into_iter().next()
+    }
+
+    pub fn task_for_session(&self, session: &str) -> Option<TaskRow> {
+        self.task_rows("WHERE session = ?1", Some(session)).into_iter().next()
+    }
+
+    /// Update one JSON or text field of a task (field names are fixed here).
+    pub fn set_task_field(&self, id: &str, field: TaskField, value: &Value) -> Result<(), LedgerError> {
+        let col = match field {
+            TaskField::Plan => "plan",
+            TaskField::Evidence => "evidence",
+            TaskField::Result => "result",
+            TaskField::Intent => "intent",
+        };
+        self.conn.lock().unwrap().execute(
+            &format!("UPDATE tasks SET {col} = ?1, updated_at = ?2 WHERE id = ?3"),
+            params![value.to_string(), now(), id],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_task_paused(&self, id: &str, paused: bool) -> Result<(), LedgerError> {
+        self.conn.lock().unwrap().execute(
+            "UPDATE tasks SET paused = ?1, updated_at = ?2 WHERE id = ?3",
+            params![paused as i64, now(), id],
+        )?;
+        Ok(())
+    }
+
+    /// Change state only if it is still `from` (compare-and-set), recording
+    /// the transition. Returns false if the state had changed meanwhile.
+    pub fn set_task_state(&self, id: &str, from: &str, to: &str, reason: &str) -> Result<bool, LedgerError> {
+        let c = self.conn.lock().unwrap();
+        let n = c.execute(
+            "UPDATE tasks SET state = ?1, state_reason = ?2, updated_at = ?3 WHERE id = ?4 AND state = ?5",
+            params![to, reason, now(), id, from],
+        )?;
+        if n == 1 {
+            c.execute(
+                "INSERT INTO task_events(task, ts, kind, from_state, to_state, detail) VALUES(?1,?2,'state',?3,?4,?5)",
+                params![id, now(), from, to, reason],
+            )?;
+        }
+        Ok(n == 1)
+    }
+
+    pub fn add_task_event(&self, id: &str, kind: &str, detail: &Value) -> Result<(), LedgerError> {
+        self.conn.lock().unwrap().execute(
+            "INSERT INTO task_events(task, ts, kind, from_state, to_state, detail) VALUES(?1,?2,?3,'','',?4)",
+            params![id, now(), kind, detail.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn task_events(&self, id: &str) -> Vec<Value> {
+        let c = self.conn.lock().unwrap();
+        let Ok(mut st) = c.prepare(
+            "SELECT ts, kind, from_state, to_state, detail FROM task_events WHERE task = ?1 ORDER BY id LIMIT 500",
+        ) else {
+            return Vec::new();
+        };
+        st.query_map(params![id], |r| {
+            let detail: String = r.get(4)?;
+            Ok(serde_json::json!({
+                "ts": r.get::<_, i64>(0)?,
+                "kind": r.get::<_, String>(1)?,
+                "from": r.get::<_, String>(2)?,
+                "to": r.get::<_, String>(3)?,
+                "detail": serde_json::from_str::<Value>(&detail).unwrap_or(Value::String(detail)),
+            }))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// Did this session successfully run `tool` (per the audit log)?
+    pub fn session_ran_ok(&self, session: &str, tool: &str) -> bool {
+        self.conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT 1 FROM audit_log WHERE session = ?1 AND kind = 'tool_run' AND tool = ?2 AND decision = 'ok' LIMIT 1",
+                params![session, tool],
+                |_| Ok(()),
+            )
+            .is_ok()
+    }
+
+    /// Count approvals the user answered in a session (human interventions).
+    pub fn session_interventions(&self, session: &str) -> i64 {
+        self.conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM audit_log WHERE session = ?1 AND actor = 'user' AND kind IN ('approval','answer')",
+                params![session],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    }
+
+    // ---- Idempotency: results of side-effecting tool calls --------------------
+
+    pub fn prior_result(&self, session: &str, tool: &str, digest: &str) -> Option<Value> {
+        self.conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT result FROM tool_results WHERE session = ?1 AND tool = ?2 AND digest = ?3",
+                params![session, tool, digest],
+                |r| r.get::<_, String>(0),
+            )
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+    }
+
+    pub fn save_result(&self, session: &str, tool: &str, digest: &str, result: &Value) {
+        let _ = self.conn.lock().unwrap().execute(
+            "INSERT OR IGNORE INTO tool_results(session, tool, digest, result, ts) VALUES(?1,?2,?3,?4,?5)",
+            params![session, tool, digest, result.to_string(), now()],
+        );
     }
 
     // ---- Security settings and standing approvals ---------------------------

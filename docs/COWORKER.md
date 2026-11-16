@@ -169,6 +169,31 @@ Memory use is not capped (macOS ignores `RLIMIT_AS`); the timeout bounds it.
 connected-app tools share one namespace: `apps.<app>_<tool>` (app names are
 lowercase letters and digits only).
 
+## Tasks (autonomous agent slice)
+
+Assistant → **Tasks**. Describe a goal in नेपाली, Romanized Nepali or
+English. While you type, DigitsNepal shows what it understood offline
+(category, dates, times, money, places, preferences, and which requested
+actions it cannot perform). **Start task** creates a durable task:
+
+- **States**: CREATED → PLANNING → RUNNING ⇄ WAITING_FOR_APPROVAL /
+  NEEDS_CLARIFICATION / RETRYING → COMPLETED, or BLOCKED / FAILED /
+  CANCELLED. Every transition is validated and recorded.
+- **Plan and progress** come from the agent's `task.plan` / `task.update`
+  calls, validated by DigitsNepal. A plan that changes the user's amounts,
+  dates or places gets a visible warning.
+- **Result**: `task.complete` lists the actions performed; each is checked
+  against the audit log (and the file on disk). A task is COMPLETED only if
+  everything checks out; a claimed booking, purchase or message blocks it.
+- **Controls**: Pause (stops the current step), Resume (also after the app
+  was closed; open approvals come back), Cancel, Retry (after a failure).
+- **Repeated writes**: an identical successful write in the same task is not
+  performed twice.
+- **Workflows**: local service, job search and supplier deal playbooks; each
+  stops before booking, applying, contacting or paying.
+
+See `docs/architecture/AUTONOMOUS_AGENT.md` for the gap analysis.
+
 ## What runs automatically, what asks, what is refused
 
 | Action | Decision |

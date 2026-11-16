@@ -309,6 +309,148 @@ pub fn coworker_pending(cw: State<CoworkerState>) -> Vec<PendingItem> {
         .collect()
 }
 
+// ---- Tasks ----------------------------------------------------------------------
+
+#[derive(Serialize)]
+pub struct TaskPreview {
+    pub hints: crate::coworker::intent::IntentHints,
+    pub workflow: Option<String>,
+    pub stop_at: Option<String>,
+}
+
+/// Offline, instant understanding of a request while the user types.
+#[tauri::command]
+pub fn coworker_task_preview(text: String) -> TaskPreview {
+    let hints = crate::coworker::intent::analyze(&text);
+    let pb = crate::coworker::tasks::playbook(&hints.category);
+    TaskPreview {
+        workflow: pb.map(|p| p.title.to_string()),
+        stop_at: pb.map(|p| p.stop_at.to_string()),
+        hints,
+    }
+}
+
+#[tauri::command]
+pub async fn coworker_task_create(
+    text: String,
+    specialist: Option<String>,
+    state: State<'_, AppState>,
+    cw: State<'_, CoworkerState>,
+) -> CmdResult<crate::coworker::ledger::TaskRow> {
+    if text.chars().count() > 4000 {
+        return Err(err("too_long", "Please keep a task under 4,000 characters."));
+    }
+    let spec = spec(&state)?;
+    cw.0.create_task(&spec, &text, specialist.as_deref())
+        .await
+        .map_err(|e| err("task", e.to_string()))
+}
+
+#[tauri::command]
+pub fn coworker_tasks(cw: State<CoworkerState>) -> Vec<crate::coworker::ledger::TaskRow> {
+    cw.0.recover_tasks();
+    cw.0.ledger.tasks()
+}
+
+#[derive(Serialize)]
+pub struct TaskDetail {
+    pub task: crate::coworker::ledger::TaskRow,
+    pub events: Vec<serde_json::Value>,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub interventions: i64,
+}
+
+#[tauri::command]
+pub fn coworker_task(id: String, cw: State<CoworkerState>) -> CmdResult<TaskDetail> {
+    let task = cw.0.ledger.task(&id).ok_or_else(|| err("task", "Unknown task."))?;
+    let (input_tokens, output_tokens) = cw.0.ledger.usage_totals(Some(&task.session));
+    Ok(TaskDetail {
+        events: cw.0.ledger.task_events(&id),
+        interventions: cw.0.ledger.session_interventions(&task.session),
+        input_tokens,
+        output_tokens,
+        task,
+    })
+}
+
+#[tauri::command]
+pub async fn coworker_task_control(
+    id: String,
+    action: String,
+    state: State<'_, AppState>,
+    cw: State<'_, CoworkerState>,
+) -> CmdResult<()> {
+    let r = match action.as_str() {
+        "pause" => cw.0.pause_task(&id).await,
+        "cancel" => cw.0.cancel_task(&id).await,
+        "resume" => cw.0.resume_task(&id, &spec(&state)?).await,
+        "retry" => cw.0.retry_task(&id, &spec(&state)?).await,
+        _ => return Err(err("task", "Unknown action.")),
+    };
+    r.map_err(|e| err("task", e.to_string()))
+}
+
+#[derive(Serialize)]
+pub struct TaskMetrics {
+    pub total: usize,
+    pub completed: usize,
+    pub verified: usize,
+    pub failed: usize,
+    pub cancelled: usize,
+    pub active: usize,
+    pub completion_rate: Option<f64>,
+    pub verified_rate: Option<f64>,
+    pub interventions_per_task: Option<f64>,
+    pub tokens_per_task: Option<f64>,
+    pub median_minutes: Option<f64>,
+}
+
+/// Honest numbers from the local records only.
+#[tauri::command]
+pub fn coworker_task_metrics(cw: State<CoworkerState>) -> TaskMetrics {
+    let tasks = cw.0.ledger.tasks();
+    let count = |s: &str| tasks.iter().filter(|t| t.state == s).count();
+    let completed = count("COMPLETED");
+    let failed = count("FAILED");
+    let cancelled = count("CANCELLED");
+    let finished = completed + failed + cancelled;
+    let with_result = tasks.iter().filter(|t| t.result.get("verified").is_some()).count();
+    let verified = tasks.iter().filter(|t| t.result["verified"] == true).count();
+    let n = tasks.len() as f64;
+    let ratio = |a: usize, b: usize| (b > 0).then(|| a as f64 / b as f64);
+    let mut mins: Vec<f64> = tasks
+        .iter()
+        .filter(|t| t.state == "COMPLETED")
+        .map(|t| (t.updated_at - t.created_at) as f64 / 60_000.0)
+        .collect();
+    mins.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let tokens: u64 = tasks
+        .iter()
+        .map(|t| {
+            let (i, o) = cw.0.ledger.usage_totals(Some(&t.session));
+            i + o
+        })
+        .sum();
+    let interventions: i64 = tasks
+        .iter()
+        .map(|t| cw.0.ledger.session_interventions(&t.session))
+        .sum();
+    TaskMetrics {
+        total: tasks.len(),
+        completed,
+        verified,
+        failed,
+        cancelled,
+        active: tasks.len() - finished - count("BLOCKED"),
+        completion_rate: ratio(completed, finished),
+        verified_rate: ratio(verified, with_result),
+        interventions_per_task: (n > 0.0).then(|| interventions as f64 / n),
+        tokens_per_task: (n > 0.0).then(|| tokens as f64 / n),
+        median_minutes: mins.get(mins.len() / 2).copied(),
+    }
+}
+
 // ---- Security Center ---------------------------------------------------------
 
 #[derive(Serialize)]

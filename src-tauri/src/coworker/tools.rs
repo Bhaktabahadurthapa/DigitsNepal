@@ -214,6 +214,52 @@ pub fn specs() -> Vec<ToolSpec> {
             cancellable: true,
         },
         ToolSpec {
+            name: "task.plan",
+            description: "Task protocol, step 1 (only for messages starting with [Task …]): record the goal and a plan of 1–12 steps. Copy the user's amounts, dates (YYYY-MM-DD) and places exactly. List missing_info only if essential; then ask the user with ask_user.",
+            risk: Risk::Read,
+            input_schema: obj(json!({
+                "summary": {"type": "string", "minLength": 1, "maxLength": 300},
+                "category": {"type": "string", "maxLength": 40},
+                "amounts": {"type": "array", "maxItems": 10, "items": {"type": "object", "properties": {"amount": {"type": "number"}, "currency": {"type": "string", "maxLength": 8}}, "required": ["amount"], "additionalProperties": false}},
+                "dates": {"type": "array", "maxItems": 10, "items": {"type": "string", "maxLength": 10}},
+                "locations": {"type": "array", "maxItems": 10, "items": {"type": "string", "maxLength": 80}},
+                "missing_info": {"type": "array", "maxItems": 10, "items": {"type": "string", "maxLength": 200}},
+                "steps": {"type": "array", "minItems": 1, "maxItems": 12, "items": {"type": "object", "properties": {"title": {"type": "string", "maxLength": 200}, "tool": {"type": "string", "maxLength": 64}, "needs_approval": {"type": "boolean"}}, "required": ["title"], "additionalProperties": false}}
+            }), &["summary", "steps"]),
+            output_schema: error_out(json!({"type": "object", "properties": {"ok": {"type": "boolean"}, "warnings": {"type": "array"}}, "required": ["ok"]})),
+            timeout: s(5),
+            cancellable: false,
+        },
+        ToolSpec {
+            name: "task.update",
+            description: "Task protocol: mark a plan step (numbered from 1) as running, done, skipped or failed, with a short note and any evidence (title + URL or file path).",
+            risk: Risk::Read,
+            input_schema: obj(json!({
+                "step": {"type": "integer", "minimum": 1, "maximum": 12},
+                "status": {"type": "string", "enum": ["running", "done", "skipped", "failed"]},
+                "note": {"type": "string", "maxLength": 500},
+                "evidence": {"type": "array", "maxItems": 10, "items": {"type": "object", "properties": {"title": {"type": "string", "maxLength": 200}, "source": {"type": "string", "maxLength": 2048}}, "required": ["title", "source"], "additionalProperties": false}}
+            }), &["step", "status"]),
+            output_schema: error_out(json!({"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]})),
+            timeout: s(5),
+            cancellable: false,
+        },
+        ToolSpec {
+            name: "task.complete",
+            description: "Task protocol, last step: report the outcome, a summary in the user's language, every action you actually performed (tool + target, e.g. documents.create + file path), evidence and next steps for the user. DigitsNepal verifies each action against its records; unverifiable claims block completion.",
+            risk: Risk::Read,
+            input_schema: obj(json!({
+                "outcome": {"type": "string", "enum": ["completed", "blocked", "failed"]},
+                "summary": {"type": "string", "minLength": 1, "maxLength": 4000},
+                "actions": {"type": "array", "maxItems": 30, "items": {"type": "object", "properties": {"tool": {"type": "string", "maxLength": 64}, "target": {"type": "string", "maxLength": 2048}}, "required": ["tool"], "additionalProperties": false}},
+                "evidence": {"type": "array", "maxItems": 20, "items": {"type": "object", "properties": {"title": {"type": "string", "maxLength": 200}, "source": {"type": "string", "maxLength": 2048}}, "required": ["title", "source"], "additionalProperties": false}},
+                "next_steps": {"type": "array", "maxItems": 10, "items": {"type": "string", "maxLength": 300}}
+            }), &["outcome", "summary"]),
+            output_schema: error_out(json!({"type": "object", "properties": {"state": {"type": "string"}, "verified": {"type": "boolean"}}, "required": ["state", "verified"]})),
+            timeout: s(5),
+            cancellable: false,
+        },
+        ToolSpec {
             name: "code.run",
             description: "Run a short Python, JavaScript or shell program in DigitsNepal's macOS sandbox: no network, no access to the user's files or apps. input_files from granted folders are copied into ./input (read-only); write results to ./output. Returns stdout, stderr and small output files. Only when the user turned it on in Security Center; asks every time.",
             risk: Risk::Exec,
@@ -296,6 +342,8 @@ pub struct Deps {
     pub web: WebConfig,
     /// Parent folder for sandbox work folders.
     pub sandbox_dir: PathBuf,
+    /// The engine session the call belongs to (links task tools to a task).
+    pub session: String,
 }
 
 /// The user's global switches, checked again when a tool actually runs.
@@ -393,6 +441,7 @@ pub async fn execute(name: &str, args: Value, deps: &Deps) -> Value {
             },
         },
         "automation.list" => json!({"automations": deps.ledger.automations().unwrap_or_default()}),
+        "task.plan" | "task.update" | "task.complete" => task_tool(canonical(name), &args, deps),
         "code.run" => {
             let mut inputs = Vec::new();
             for p in args["input_files"]
@@ -425,6 +474,131 @@ pub async fn execute(name: &str, args: Value, deps: &Deps) -> Value {
         }
         "automation.run" => Box::pin(run_automation(arg(&args, "name"), deps)).await,
         other => json!({"error": format!("Unknown tool {other}")}),
+    }
+}
+
+fn task_tool(name: &str, args: &Value, deps: &Deps) -> Value {
+    use super::ledger::TaskField;
+    use super::tasks::{self, TaskState};
+    let ledger = &deps.ledger;
+    let Some(task) = ledger.task_for_session(&deps.session) else {
+        return json!({"error": "This conversation is not a task; task tools are only for messages that start with [Task …]."});
+    };
+    match name {
+        "task.plan" => {
+            let hints: super::intent::IntentHints = match serde_json::from_value(task.intent.clone()) {
+                Ok(h) => h,
+                Err(_) => super::intent::analyze(&task.request),
+            };
+            match tasks::check_plan(args, &hints) {
+                Err(e) => json!({"error": e}),
+                Ok((plan, warnings)) => {
+                    tasks::record(ledger, &task, TaskField::Plan, &plan);
+                    ledger
+                        .add_task_event(
+                            &task.id,
+                            "plan",
+                            &json!({"steps": plan["steps"].as_array().map_or(0, Vec::len), "warnings": warnings}),
+                        )
+                        .ok();
+                    let needs_info = plan["missing_info"].as_array().is_some_and(|m| !m.is_empty());
+                    let fresh = ledger.task(&task.id).unwrap_or(task);
+                    if !needs_info {
+                        tasks::transition(ledger, &fresh, TaskState::Running, "Plan ready; working on it");
+                    }
+                    json!({
+                        "ok": true,
+                        "warnings": warnings,
+                        "next": if !warnings.is_empty() {
+                            "Your plan changed something the user said. Call task.plan again with the user's exact values, or ask the user."
+                        } else if needs_info {
+                            "Ask the user for the missing information with ask_user before continuing."
+                        } else {
+                            "Work through the steps; call task.update after each."
+                        }
+                    })
+                }
+            }
+        }
+        "task.update" => {
+            let mut plan = task.plan.clone();
+            if let Err(e) = tasks::update_step(&mut plan, args) {
+                return json!({"error": e});
+            }
+            tasks::record(ledger, &task, TaskField::Plan, &plan);
+            let new: Vec<Value> = args["evidence"].as_array().cloned().unwrap_or_default();
+            if !new.is_empty() {
+                let mut ev = task.evidence.as_array().cloned().unwrap_or_default();
+                ev.extend(new.into_iter().take(10));
+                ev.truncate(100);
+                tasks::record(ledger, &task, TaskField::Evidence, &Value::Array(ev));
+            }
+            ledger
+                .add_task_event(
+                    &task.id,
+                    "step",
+                    &json!({"step": args["step"], "status": args["status"], "note": args["note"]}),
+                )
+                .ok();
+            json!({"ok": true})
+        }
+        _ => {
+            let claims = args["actions"].as_array().cloned().unwrap_or_default();
+            let checked = tasks::verify_claims(ledger, &deps.session, &claims);
+            let all_ok = checked.iter().all(|c| c["verified"] == true);
+            let outcome = args["outcome"].as_str().unwrap_or("completed");
+            let mut ev = task.evidence.as_array().cloned().unwrap_or_default();
+            ev.extend(
+                args["evidence"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .take(20),
+            );
+            ev.truncate(100);
+            tasks::record(ledger, &task, TaskField::Evidence, &Value::Array(ev));
+            let result = json!({
+                "outcome": outcome,
+                "summary": args["summary"],
+                "actions": checked,
+                "verified": all_ok,
+                "next_steps": args["next_steps"],
+            });
+            tasks::record(ledger, &task, TaskField::Result, &result);
+            let (to, why) = match outcome {
+                "completed" if all_ok => (TaskState::Completed, "Finished; every action verified".to_string()),
+                "completed" => (
+                    TaskState::Blocked,
+                    format!(
+                        "Could not verify: {}",
+                        checked
+                            .iter()
+                            .filter(|c| c["verified"] != true)
+                            .map(|c| format!(
+                                "{} {}",
+                                c["tool"].as_str().unwrap_or(""),
+                                c["target"].as_str().unwrap_or("")
+                            ))
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    ),
+                ),
+                "failed" => (TaskState::Failed, "Sahayogi could not finish the task".into()),
+                _ => (TaskState::Blocked, "Needs something from you to continue".into()),
+            };
+            let fresh = ledger.task(&task.id).unwrap_or(task);
+            let moved = tasks::transition(ledger, &fresh, to, &why);
+            ledger
+                .add_task_event(&fresh.id, "result", &json!({"outcome": outcome, "verified": all_ok}))
+                .ok();
+            json!({
+                "state": if moved { to.as_str() } else { fresh.state.as_str() },
+                "verified": all_ok,
+                "actions": checked,
+                "note": if all_ok { "Tell the user the result." } else { "Some claimed actions could not be verified. Tell the user honestly which ones did not happen." }
+            })
+        }
     }
 }
 
@@ -545,9 +719,29 @@ pub async fn run_guarded(
     if let Some(why) = blocked_by_security(&deps.ledger, spec.risk) {
         return json!({"error": why});
     }
+    // Idempotency: an identical side-effecting call that already succeeded in
+    // this conversation (e.g. replayed after a retry or restart) is not run
+    // again; the earlier result is returned.
+    let key = (spec.risk == Risk::WriteLocal).then(|| super::ledger::sha256_hex(args.to_string().as_bytes()));
+    if let Some(k) = &key {
+        if let Some(prev) = deps.ledger.prior_result(session, spec.name, k) {
+            deps.ledger
+                .record(
+                    session,
+                    "agent",
+                    "tool_run",
+                    spec.name,
+                    &args,
+                    "ok",
+                    "already done; not repeated",
+                )
+                .ok();
+            return json!({"already_done": true, "note": "This exact action already succeeded earlier in this conversation, so it was not repeated.", "previous_result": prev});
+        }
+    }
     let digest_args = args.clone();
     let fut = execute(name, args, deps);
-    guard(
+    let out = guard(
         &deps.ledger,
         session,
         spec.name,
@@ -556,7 +750,11 @@ pub async fn run_guarded(
         spec.cancellable.then_some(cancel),
         fut,
     )
-    .await
+    .await;
+    if let (Some(k), None) = (&key, out.get("error")) {
+        deps.ledger.save_result(session, spec.name, k, &out);
+    }
+    out
 }
 
 /// Timeout, optional cancellation, and an audited `tool_run` record.
@@ -648,6 +846,7 @@ mod tests {
             translator: Some(Arc::new(Slow)),
             web: WebConfig::default(),
             sandbox_dir: std::env::temp_dir(),
+            session: "s".into(),
         };
         let token = tokio_util::sync::CancellationToken::new();
         let t2 = token.clone();
@@ -676,6 +875,7 @@ mod tests {
             translator: Some(Arc::new(Echo)),
             web: WebConfig::default(),
             sandbox_dir: std::env::temp_dir(),
+            session: "s".into(),
         };
         let out = execute(
             "translation.translate",

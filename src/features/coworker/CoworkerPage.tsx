@@ -23,7 +23,7 @@ function timeAgo(ms: number): string {
   return `${Math.round(s / 86400)}d`;
 }
 
-export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function CoworkerPage({ onOpenSettings, openSession }: { onOpenSettings: () => void; openSession?: { id: string; n: number } | null }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -56,6 +56,12 @@ export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void })
     });
     return () => void un.then((f) => f());
   }, [refresh]);
+
+  // Opened from a task: show that task's conversation.
+  useEffect(() => {
+    if (openSession) void open(openSession.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSession?.n]);
 
   useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), [transcripts, active]);
 
@@ -487,6 +493,9 @@ const LABELS: Record<string, string> = {
   "automation.list": "Checking saved automations",
   "automation.run": "Run an automation",
   "code.run": "Run code in the sandbox",
+  "task.plan": "Recording the plan",
+  "task.update": "Updating progress",
+  "task.complete": "Reporting the result",
   // Conversations from earlier versions
   "dn.understand_text": "Understanding your Nepali",
   "dn.granted_folders": "Checking your shared folders",

@@ -11,6 +11,7 @@
 pub mod agents;
 pub mod documents;
 pub mod files;
+pub mod intent;
 pub mod language;
 pub mod ledger;
 pub mod mcp;
@@ -22,5 +23,6 @@ pub mod sandbox;
 #[cfg(feature = "coworker")]
 pub mod service;
 pub mod specialists;
+pub mod tasks;
 pub mod tools;
 pub mod web;

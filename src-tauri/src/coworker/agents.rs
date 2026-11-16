@@ -112,7 +112,7 @@ mod tests {
         let a = coworker("conn", "model-a");
         let b = coworker("conn", "model-b");
         assert_ne!(a.id(), b.id());
-        assert!(a.id().starts_with("dn-general-v5-"));
+        assert!(a.id().starts_with("dn-general-v6-"));
         let mut c = a.clone();
         c.limits.max_model_calls = 5;
         assert_ne!(a.id(), c.id());

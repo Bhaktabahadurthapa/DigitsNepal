@@ -169,6 +169,14 @@ fn runner() -> Option<PathBuf> {
 }
 
 async fn rig(script: Script, dir: Option<tempfile::TempDir>) -> Option<Rig> {
+    rig_web(script, dir, digitsnepal_lib::coworker::web::WebConfig::default()).await
+}
+
+async fn rig_web(
+    script: Script,
+    dir: Option<tempfile::TempDir>,
+    web: digitsnepal_lib::coworker::web::WebConfig,
+) -> Option<Rig> {
     let Some(runner) = runner() else {
         eprintln!("SKIPPED: set DN_HARNESS_RUNNER (scripts/build-harness-runner.sh)");
         return None;
@@ -194,7 +202,7 @@ async fn rig(script: Script, dir: Option<tempfile::TempDir>) -> Option<Rig> {
             workspace_dir: dir.path().join("workspace"),
             backup_dir: dir.path().join("backups"),
             runner: Some(runner),
-            web: digitsnepal_lib::coworker::web::WebConfig::default(),
+            web,
         },
         sink,
     );
@@ -693,7 +701,7 @@ async fn a_read_only_specialist_cannot_write_even_if_the_model_tries() {
     *target.lock().unwrap() = forged.display().to_string();
     let s = r.cw.new_session_as(&r.spec, "research").await.unwrap();
     assert_eq!(s.specialist, "research");
-    assert!(s.agent.starts_with("dn-research-v2-"));
+    assert!(s.agent.starts_with("dn-research-v3-"));
     r.cw.send(&s.id, "write a file", &r.spec).await.unwrap();
     wait_for(&r.events, |v| v["type"] == "done" || v["type"] == "error").await;
     let tools = seen.lock().unwrap().clone();
@@ -1090,5 +1098,274 @@ async fn pausing_sahayogi_blocks_even_safe_reads() {
     let d = wait_for(&r.events, |v| v["type"] == "denied").await;
     assert!(d["reason"].as_str().unwrap().contains("paused"));
     wait_for(&r.events, |v| v["type"] == "done").await;
+    r.cw.shutdown().await;
+}
+
+// ---- Tasks ------------------------------------------------------------------------
+
+fn task_state(r: &Rig, id: &str) -> String {
+    r.cw.ledger.task(id).unwrap().state
+}
+
+async fn wait_state(r: &Rig, id: &str, want: &str) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    while task_state(r, id) != want {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "task never reached {want}; now {} ({}); events {:?}",
+            task_state(r, id),
+            r.cw.ledger.task(id).unwrap().state_reason,
+            r.cw.ledger.task_events(id)
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+fn user_text(req: &Value) -> String {
+    req["messages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|m| m["role"] == "user")
+        .map(|m| m["content"].to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn job_search_task_runs_end_to_end_with_a_verified_result() {
+    let (search, hits) = http_server(Arc::new(|_, _| {
+        (200, "text/html", r#"<a class="result__a" href="https://jobs.example.org/rust-ktm">Rust developer, Kathmandu</a><a class="result__snippet">Backend role, Rust and SQL.</a>"#.into())
+    }))
+    .await;
+    let paths = Arc::new(Mutex::new(String::new()));
+    let p2 = paths.clone();
+    let script: Script = Arc::new(move |req| {
+        let (cv, cover) = {
+            let p = p2.lock().unwrap();
+            let (a, b) = p.split_once('|').unwrap();
+            (a.to_string(), b.to_string())
+        };
+        match tool_results(req).len() {
+            0 => {
+                let u = user_text(req);
+                assert!(u.contains("[Task task_") && u.contains("Job search assistant"), "{u}");
+                Reply::Tool {
+                    name_suffix: "task__plan",
+                    args: json!({"summary": "Find Rust jobs matching the CV and draft a cover letter", "category": "job_search", "steps": [{"title": "Read the CV"}, {"title": "Search jobs", "tool": "browser.search"}, {"title": "Draft cover letter", "tool": "documents.create", "needs_approval": true}]}),
+                }
+            }
+            1 => Reply::Tool {
+                name_suffix: "files__read",
+                args: json!({"path": cv}),
+            },
+            2 => Reply::Tool {
+                name_suffix: "browser__search",
+                args: json!({"query": "Rust developer jobs Kathmandu"}),
+            },
+            3 => Reply::Tool {
+                name_suffix: "documents__create",
+                args: json!({"path": cover, "title": "Cover letter", "format": "markdown", "sections": [{"heading": "Dear hiring manager", "body": "I build backend systems in Rust and SQL."}]}),
+            },
+            4 => Reply::Tool {
+                name_suffix: "task__update",
+                args: json!({"step": 2, "status": "done", "evidence": [{"title": "Rust developer, Kathmandu", "source": "https://jobs.example.org/rust-ktm"}]}),
+            },
+            5 => Reply::Tool {
+                name_suffix: "task__complete",
+                args: json!({"outcome": "completed", "summary": "Found 1 matching job and drafted a cover letter. Apply yourself at the link.", "actions": [{"tool": "documents.create", "target": cover}, {"tool": "browser.search", "target": "Rust developer jobs Kathmandu"}], "next_steps": ["Apply at https://jobs.example.org/rust-ktm"]}),
+            },
+            _ => Reply::Text("Done: cover letter drafted; you can apply at the link.".into()),
+        }
+    });
+    let web = digitsnepal_lib::coworker::web::WebConfig {
+        search_url: format!("{search}/html/?q={{q}}"),
+        allow_private: true,
+        ..Default::default()
+    };
+    let Some(r) = rig_web(script, None, web).await else {
+        return;
+    };
+    let cv = r.granted.join("cv.txt");
+    std::fs::write(&cv, "Sita Sharma. Skills: Rust, SQL. 3 years backend.").unwrap();
+    let cover = r.granted.join("cover.md");
+    *paths.lock().unwrap() = format!("{}|{}", cv.display(), cover.display());
+
+    let t =
+        r.cw.create_task(
+            &r.spec,
+            "Mero CV anusar ramro jagir khojera apply garna help gara.",
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(t.intent["category"], "job_search");
+    let ask = wait_for(&r.events, |v| {
+        v["type"] == "approval_required" && v["tool"] == "browser.search"
+    })
+    .await;
+    assert_eq!(task_state(&r, &t.id), "WAITING_FOR_APPROVAL");
+    assert!(r.cw.decide(ask["id"].as_str().unwrap(), UserDecision::Once));
+    let ask = wait_for(&r.events, |v| {
+        v["type"] == "approval_required" && v["tool"] == "documents.create"
+    })
+    .await;
+    assert!(r.cw.decide(ask["id"].as_str().unwrap(), UserDecision::Once));
+    wait_state(&r, &t.id, "COMPLETED").await;
+    let done = r.cw.ledger.task(&t.id).unwrap();
+    assert_eq!(done.result["verified"], true, "{}", done.result);
+    assert_eq!(done.plan["steps"][1]["status"], "done");
+    assert_eq!(done.evidence[0]["source"], "https://jobs.example.org/rust-ktm");
+    assert!(cover.exists());
+    assert!(hits.load(std::sync::atomic::Ordering::SeqCst) >= 1, "search really ran");
+    let states: Vec<String> =
+        r.cw.ledger
+            .task_events(&t.id)
+            .iter()
+            .filter(|e| e["kind"] == "state")
+            .map(|e| e["to"].as_str().unwrap().to_string())
+            .collect();
+    assert_eq!(states.first().map(String::as_str), Some("PLANNING"));
+    assert!(states.contains(&"WAITING_FOR_APPROVAL".to_string()) && states.contains(&"RUNNING".to_string()));
+    assert_eq!(states.last().map(String::as_str), Some("COMPLETED"));
+    r.cw.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_claimed_booking_that_never_happened_blocks_completion() {
+    let script: Script = Arc::new(|req| match tool_results(req).len() {
+        0 => Reply::Tool {
+            name_suffix: "task__plan",
+            args: json!({"summary": "Book a cleaner", "dates": ["DUMMY"], "steps": [{"title": "Book"}]}),
+        },
+        1 => Reply::Tool {
+            name_suffix: "task__complete",
+            args: json!({"outcome": "completed", "summary": "Booked CleanCo for tomorrow 10am.", "actions": [{"tool": "booking.create", "target": "CleanCo 10am"}]}),
+        },
+        _ => Reply::Text("I could not actually book it.".into()),
+    });
+    let Some(r) = rig(script, None).await else { return };
+    let t =
+        r.cw.create_task(&r.spec, "Malai bholi ghar safa garne service book gardinu", None)
+            .await
+            .unwrap();
+    wait_state(&r, &t.id, "BLOCKED").await;
+    let row = r.cw.ledger.task(&t.id).unwrap();
+    assert_eq!(row.result["verified"], false);
+    assert!(row.state_reason.contains("Could not verify"), "{}", row.state_reason);
+    assert!(
+        row.plan["warnings"][0].as_str().unwrap().contains("bholi"),
+        "date change flagged: {}",
+        row.plan
+    );
+    r.cw.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_task_survives_a_restart_mid_approval_and_pause_resume_works() {
+    let target = Arc::new(Mutex::new(String::new()));
+    let t2 = target.clone();
+    let script: Script = Arc::new(move |req| {
+        let n = tool_results(req).len();
+        match n {
+            0 => Reply::Tool {
+                name_suffix: "task__plan",
+                args: json!({"summary": "Write notes", "steps": [{"title": "Write"}]}),
+            },
+            1 => Reply::Tool {
+                name_suffix: "files__create",
+                args: json!({"path": t2.lock().unwrap().clone(), "content": "notes"}),
+            },
+            2 => Reply::Tool {
+                name_suffix: "task__complete",
+                args: json!({"outcome": "completed", "summary": "Notes written.", "actions": [{"tool": "files.create", "target": t2.lock().unwrap().clone()}]}),
+            },
+            _ => Reply::Text("Notes written.".into()),
+        }
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let keep = dir.path().to_path_buf();
+    let Some(r) = rig(script.clone(), Some(dir)).await else {
+        return;
+    };
+    let notes = r.granted.join("notes.md");
+    *target.lock().unwrap() = notes.display().to_string();
+    let t =
+        r.cw.create_task(&r.spec, "write my notes file", Some("general"))
+            .await
+            .unwrap();
+    wait_for(&r.events, |v| v["type"] == "approval_required").await;
+    wait_state(&r, &t.id, "WAITING_FOR_APPROVAL").await;
+
+    // The app closes while the approval is open.
+    r.cw.shutdown().await;
+    let spec = r.spec.clone();
+    let Rig { _dir, .. } = r;
+    let mut r = rig(script, Some(_dir)).await.unwrap();
+    r.spec = spec; // same model endpoint as before the restart
+    assert_eq!(r.granted, std::fs::canonicalize(keep.join("Downloads")).unwrap());
+    r.cw.recover_tasks();
+    assert_eq!(task_state(&r, &t.id), "BLOCKED");
+    assert!(r.cw.ledger.task(&t.id).unwrap().state_reason.contains("closed"));
+    assert!(!notes.exists());
+
+    // Resume shows the same approval again.
+    r.cw.resume_task(&t.id, &r.spec).await.unwrap();
+    let ask = wait_for(&r.events, |v| v["type"] == "approval_required").await;
+    // Pause while it waits: the step is declined and the task waits for you.
+    r.cw.pause_task(&t.id).await.unwrap();
+    assert_eq!(task_state(&r, &t.id), "BLOCKED");
+    assert!(r.cw.ledger.task(&t.id).unwrap().paused);
+    assert!(
+        !r.cw.decide(ask["id"].as_str().unwrap(), UserDecision::Once),
+        "paused approvals are closed"
+    );
+    assert!(!notes.exists());
+    r.cw.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_repeated_identical_write_is_not_performed_twice() {
+    let target = Arc::new(Mutex::new(String::new()));
+    let t2 = target.clone();
+    let script: Script = Arc::new(move |req| match tool_results(req).len() {
+        0 | 1 => Reply::Tool {
+            name_suffix: "files__create",
+            args: json!({"path": t2.lock().unwrap().clone(), "content": "once"}),
+        },
+        _ => Reply::Text("ok".into()),
+    });
+    let Some(r) = rig(script, None).await else { return };
+    let f = r.granted.join("once.md");
+    *target.lock().unwrap() = f.display().to_string();
+    let s = r.cw.new_session(&r.spec).await.unwrap();
+    r.cw.send(&s.id, "write it", &r.spec).await.unwrap();
+    for _ in 0..2 {
+        let ask = wait_for(&r.events, |v| {
+            v["type"] == "approval_required" && v.get("seen").is_none()
+        })
+        .await;
+        for v in r.events.lock().unwrap().iter_mut() {
+            if v["id"] == ask["id"] {
+                v["seen"] = json!(true);
+            }
+        }
+        assert!(r.cw.decide(ask["id"].as_str().unwrap(), UserDecision::Once));
+    }
+    wait_for(&r.events, |v| v["type"] == "done").await;
+    let runs: Vec<_> =
+        r.cw.ledger
+            .recent(50)
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.kind == "tool_run" && e.tool == "files.create")
+            .collect();
+    assert_eq!(runs.len(), 2);
+    assert!(runs.iter().any(|e| e.detail.contains("not repeated")), "{runs:?}");
+    let backups = walk(&r._dir.path().join("backups"));
+    assert!(
+        backups.is_empty(),
+        "the second write never ran, so nothing was overwritten: {backups:?}"
+    );
     r.cw.shutdown().await;
 }

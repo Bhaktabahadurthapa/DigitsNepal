@@ -74,6 +74,19 @@ pub struct Coworker {
     translator: Arc<RwLock<Option<Arc<dyn Translator>>>>,
     /// Turns currently being driven (the engine is only reloaded when idle).
     active: std::sync::atomic::AtomicUsize,
+    recovered: std::sync::atomic::AtomicBool,
+}
+
+#[derive(Debug)]
+pub enum TaskSignal {
+    ApprovalAsked,
+    ApprovalResolved,
+    Question,
+    Answered,
+    ProviderRetry,
+    Done(String),
+    Cancelled,
+    Error(String),
 }
 
 struct ActiveTurn<'a>(&'a std::sync::atomic::AtomicUsize);
@@ -117,6 +130,7 @@ impl Coworker {
             hints: RwLock::new(HashMap::new()),
             translator: Arc::new(RwLock::new(None)),
             active: std::sync::atomic::AtomicUsize::new(0),
+            recovered: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -251,9 +265,196 @@ impl Coworker {
     }
 
     fn emit(&self, session: &str, kind: &str, mut payload: Value) {
+        let signal = match kind {
+            "approval_required" => Some(TaskSignal::ApprovalAsked),
+            "approval_resolved" => Some(TaskSignal::ApprovalResolved),
+            "question" => Some(TaskSignal::Question),
+            "provider_error" if payload["retryable"] == true => Some(TaskSignal::ProviderRetry),
+            "done" => Some(TaskSignal::Done(payload["text"].as_str().unwrap_or("").to_string())),
+            "cancelled" => Some(TaskSignal::Cancelled),
+            "error" => Some(TaskSignal::Error(payload["message"].as_str().unwrap_or("").to_string())),
+            _ => None,
+        };
         payload["session"] = json!(session);
         payload["type"] = json!(kind);
         (self.sink)(payload);
+        if let Some(sig) = signal {
+            self.task_event(session, sig);
+        }
+    }
+
+    /// Keep a task's state in step with what the engine is doing.
+    fn task_event(&self, session: &str, signal: TaskSignal) {
+        use super::tasks::TaskState::*;
+        let Some(t) = self.ledger.task_for_session(session) else {
+            return;
+        };
+        let Some(state) = super::tasks::TaskState::parse(&t.state) else {
+            return;
+        };
+        let (to, why) = match signal {
+            TaskSignal::ApprovalAsked => (WaitingForApproval, "Waiting for your approval".to_string()),
+            // Only a task that was waiting on this, and is not paused, resumes.
+            TaskSignal::ApprovalResolved if state == WaitingForApproval && !t.paused => {
+                (Running, "Continuing".to_string())
+            }
+            TaskSignal::Answered if state == NeedsClarification && !t.paused => (Running, "Continuing".to_string()),
+            TaskSignal::ApprovalResolved | TaskSignal::Answered => return,
+            TaskSignal::Question => (NeedsClarification, "Waiting for your answer".to_string()),
+            TaskSignal::ProviderRetry => (Retrying, "The AI provider had a temporary problem".to_string()),
+            TaskSignal::Done(text) => {
+                if matches!(state, Completed | Failed | Blocked | Cancelled) {
+                    return;
+                }
+                if t.paused {
+                    (Blocked, "Paused by you".to_string())
+                } else if text.trim_end().ends_with('?') {
+                    (
+                        NeedsClarification,
+                        "Sahayogi asked you something in the conversation".to_string(),
+                    )
+                } else {
+                    (
+                        Blocked,
+                        "Sahayogi stopped before finishing. Reply in the conversation or press Resume.".to_string(),
+                    )
+                }
+            }
+            TaskSignal::Cancelled if t.paused => (Blocked, "Paused by you".to_string()),
+            TaskSignal::Cancelled => (Cancelled, "Cancelled".to_string()),
+            TaskSignal::Error(m) => (Failed, m),
+        };
+        if super::tasks::transition(&self.ledger, &t, to, &why) {
+            (self.sink)(json!({"type": "task", "session": session, "task": t.id, "state": to.as_str(), "reason": why}));
+        }
+    }
+
+    // ---- Tasks ----------------------------------------------------------------
+
+    /// Create a task from a request in any language and start it.
+    pub async fn create_task(
+        self: &Arc<Self>,
+        spec: &ProviderSpec,
+        request: &str,
+        specialist: Option<&str>,
+    ) -> Result<super::ledger::TaskRow, CoworkerError> {
+        let request = request.trim();
+        if request.is_empty() {
+            return Err(CoworkerError::Setup("Describe what you need.".into()));
+        }
+        let hints = super::intent::analyze(request);
+        let sp = specialist
+            .or_else(|| super::tasks::playbook(&hints.category).map(|p| p.specialist))
+            .unwrap_or("general");
+        let row = self.new_session_as(spec, sp).await?;
+        let now = super::ledger::now();
+        let task = super::ledger::TaskRow {
+            id: format!("task_{}", &uuid::Uuid::new_v4().simple().to_string()[..12]),
+            session: row.id.clone(),
+            specialist: sp.to_string(),
+            request: request.to_string(),
+            intent: serde_json::to_value(&hints).unwrap_or(Value::Null),
+            plan: json!({}),
+            evidence: json!([]),
+            result: json!({}),
+            state: "CREATED".into(),
+            state_reason: "Created".into(),
+            paused: false,
+            created_at: now,
+            updated_at: now,
+        };
+        self.ledger
+            .insert_task(&task)
+            .map_err(|e| CoworkerError::Setup(e.to_string()))?;
+        self.ledger
+            .upsert_session(&SessionRow {
+                title: request.chars().take(60).collect(),
+                ..row
+            })
+            .ok();
+        self.ledger
+            .record(&task.session, "user", "task", "", &json!(request), "created", &task.id)
+            .ok();
+        super::tasks::transition(&self.ledger, &task, super::tasks::TaskState::Planning, "Planning");
+        self.send(&task.session, &super::tasks::start_message(&task, &hints), spec)
+            .await?;
+        Ok(self.ledger.task(&task.id).unwrap_or(task))
+    }
+
+    fn task_or_err(&self, id: &str) -> Result<super::ledger::TaskRow, CoworkerError> {
+        self.ledger
+            .task(id)
+            .ok_or_else(|| CoworkerError::Setup("Unknown task.".into()))
+    }
+
+    /// Pause: stop the current step; the task waits until resumed.
+    pub async fn pause_task(&self, id: &str) -> Result<(), CoworkerError> {
+        let t = self.task_or_err(id)?;
+        self.ledger.set_task_paused(id, true).ok();
+        super::tasks::transition(&self.ledger, &t, super::tasks::TaskState::Blocked, "Paused by you");
+        self.cancel(&t.session).await;
+        Ok(())
+    }
+
+    /// Resume a paused, blocked or interrupted task.
+    pub async fn resume_task(self: &Arc<Self>, id: &str, spec: &ProviderSpec) -> Result<(), CoworkerError> {
+        let t = self.task_or_err(id)?;
+        self.ledger.set_task_paused(id, false).ok();
+        if self.resume_pending(&t.session, spec).await? {
+            super::tasks::transition(&self.ledger, &t, super::tasks::TaskState::Running, "Resumed");
+            return Ok(());
+        }
+        self.send(
+            &t.session,
+            &format!("[Task {} resume] Continue this task from where you stopped. Check which plan steps are done (do not repeat them), then finish with task.complete.", t.id),
+            spec,
+        )
+        .await
+    }
+
+    pub async fn cancel_task(&self, id: &str) -> Result<(), CoworkerError> {
+        let t = self.task_or_err(id)?;
+        self.ledger.set_task_paused(id, false).ok();
+        super::tasks::transition(&self.ledger, &t, super::tasks::TaskState::Cancelled, "Cancelled by you");
+        self.cancel(&t.session).await;
+        Ok(())
+    }
+
+    pub async fn retry_task(self: &Arc<Self>, id: &str, spec: &ProviderSpec) -> Result<(), CoworkerError> {
+        let t = self.task_or_err(id)?;
+        if !super::tasks::transition(&self.ledger, &t, super::tasks::TaskState::Retrying, "Retrying") {
+            return Err(CoworkerError::Setup(
+                "Only a failed task can be retried; use Resume instead.".into(),
+            ));
+        }
+        self.send(
+            &t.session,
+            &format!("[Task {} retry] The last attempt failed ({}). Continue from the last completed step, then finish with task.complete.", t.id, t.state_reason),
+            spec,
+        )
+        .await
+    }
+
+    /// After a restart nothing is running: mark interrupted tasks so the user
+    /// can resume them. Runs once per launch.
+    pub fn recover_tasks(&self) {
+        use super::tasks::TaskState::*;
+        if self.recovered.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        for t in self.ledger.tasks() {
+            if matches!(
+                super::tasks::TaskState::parse(&t.state),
+                Some(Planning | Ready | Running | Retrying | WaitingForApproval | WaitingForExternalResponse)
+            ) {
+                super::tasks::transition(
+                    &self.ledger,
+                    &t,
+                    Blocked,
+                    "DigitsNepal was closed while this task was running. Press Resume to continue.",
+                );
+            }
+        }
     }
 
     // ---- Engine lifecycle ---------------------------------------------------
@@ -510,6 +711,16 @@ impl Coworker {
         self.ledger
             .record(session_id, "user", "message", "", &json!(text), "sent", "")
             .ok();
+        if let Some(t) = self.ledger.task_for_session(session_id) {
+            use super::tasks::TaskState::*;
+            if matches!(
+                super::tasks::TaskState::parse(&t.state),
+                Some(Blocked | NeedsClarification | Retrying)
+            ) {
+                self.ledger.set_task_paused(&t.id, false).ok();
+                super::tasks::transition(&self.ledger, &t, Running, "Continuing");
+            }
+        }
         let me = self.clone();
         let sid = session_id.to_string();
         let input = text.to_string();
@@ -796,6 +1007,10 @@ impl Coworker {
                 );
                 let answer = rx.await.unwrap_or_default();
                 self.ledger.resolve_pending(&i.id, "answered").ok();
+                self.ledger
+                    .record(sid, "user", "answer", "", &json!(answer), "answered", "")
+                    .ok();
+                self.task_event(sid, TaskSignal::Answered);
                 session.respond(i, Response::Answer(answer)).await.map_err(engine_err)
             }
             other => Err(CoworkerError::Engine(format!(
@@ -805,24 +1020,31 @@ impl Coworker {
     }
 
     pub fn decide(&self, id: &str, decision: UserDecision) -> bool {
-        match self.pending.lock().unwrap().remove(id) {
-            Some(Pending::Approval { tx, .. }) => tx.send(decision).is_ok(),
-            Some(other) => {
-                self.pending.lock().unwrap().insert(id.to_string(), other);
-                false
+        // Take the entry with the lock held only for this statement.
+        let entry = {
+            let mut map = self.pending.lock().unwrap();
+            match map.get(id) {
+                Some(Pending::Approval { .. }) => map.remove(id),
+                _ => None,
             }
-            None => false,
+        };
+        match entry {
+            Some(Pending::Approval { tx, .. }) => tx.send(decision).is_ok(),
+            _ => false,
         }
     }
 
     pub fn answer(&self, id: &str, text: &str) -> bool {
-        match self.pending.lock().unwrap().remove(id) {
-            Some(Pending::Question { tx, .. }) => tx.send(text.to_string()).is_ok(),
-            Some(other) => {
-                self.pending.lock().unwrap().insert(id.to_string(), other);
-                false
+        let entry = {
+            let mut map = self.pending.lock().unwrap();
+            match map.get(id) {
+                Some(Pending::Question { .. }) => map.remove(id),
+                _ => None,
             }
-            None => false,
+        };
+        match entry {
+            Some(Pending::Question { tx, .. }) => tx.send(text.to_string()).is_ok(),
+            _ => false,
         }
     }
 
@@ -905,6 +1127,7 @@ async fn register_tools(
                     translator: translator.read().unwrap().clone(),
                     web: web.clone(),
                     sandbox_dir: backups.with_file_name("sandbox"),
+                    session: ctx.session_id.clone(),
                 };
                 let name = name.clone();
                 async move { Ok(tools::run_guarded(&name, args, &deps, &ctx.session_id, ctx.cancellation()).await) }

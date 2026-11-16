@@ -1,10 +1,11 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
-import { Activity, BookOpen, Clock, Keyboard, Languages, Plug, Settings as SettingsIcon, ShieldCheck, Sparkles, type LucideIcon } from "lucide-react";
+import { Activity, BookOpen, Clock, Keyboard, Languages, ListChecks, Plug, Settings as SettingsIcon, ShieldCheck, Sparkles, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ActivityPage } from "../features/coworker/ActivityPage";
 import { CoworkerPage } from "../features/coworker/CoworkerPage";
 import { ToolsPage } from "../features/coworker/ToolsPage";
+import { TasksPage } from "../features/coworker/TasksPage";
 import { SecurityPage } from "../features/coworker/SecurityPage";
 import { WordExplorer } from "../features/dictionary/WordExplorer";
 import { HistoryPage } from "../features/history/HistoryPage";
@@ -15,9 +16,10 @@ import { useAppearance } from "../hooks/useAppearance";
 import { isTauri } from "../providers/api";
 import type { WordMeaning } from "../types/translation";
 
-type Tab = "translate" | "coworker" | "tools" | "security" | "activity" | "explorer" | "history" | "settings";
+type Tab = "translate" | "tasks" | "coworker" | "tools" | "security" | "activity" | "explorer" | "history" | "settings";
 const TABS: { id: Tab; label: string; key: string }[] = [
   { id: "translate", label: "Translate", key: "1" },
+  { id: "tasks", label: "Tasks", key: "8" },
   { id: "coworker", label: "Sahayogi", key: "2" },
   { id: "activity", label: "Activity", key: "3" },
   { id: "explorer", label: "Word Explorer", key: "4" },
@@ -28,7 +30,7 @@ const TABS: { id: Tab; label: string; key: string }[] = [
 ];
 const NAV_GROUPS: { title: string; tabs: Tab[] }[] = [
   { title: "Language", tabs: ["translate", "explorer", "history"] },
-  { title: "Assistant", tabs: ["coworker", "tools", "security", "activity"] },
+  { title: "Assistant", tabs: ["tasks", "coworker", "tools", "security", "activity"] },
   { title: "App", tabs: ["settings"] },
 ];
 const ICONS: Record<Tab, LucideIcon> = {
@@ -36,6 +38,7 @@ const ICONS: Record<Tab, LucideIcon> = {
   coworker: Sparkles,
   activity: Activity,
   tools: Plug,
+  tasks: ListChecks,
   security: ShieldCheck,
   explorer: BookOpen,
   history: Clock,
@@ -44,6 +47,7 @@ const ICONS: Record<Tab, LucideIcon> = {
 
 export function App() {
   const [tab, setTab] = useState<Tab>("translate");
+  const [chatSession, setChatSession] = useState<{ id: string; n: number } | null>(null);
   const [explore, setExplore] = useState<{ text: string; meanings?: WordMeaning[] }>({ text: "" });
   const [reuse, setReuse] = useState<{ text: string; n: number } | null>(null);
   const { settings, update, error } = useSettings();
@@ -160,7 +164,8 @@ export function App() {
         <div data-tauri-drag-region className={overlay ? "h-1.5" : "h-3"} />
         <div className={overlay ? "h-[calc(100%-0.375rem)]" : "h-[calc(100%-0.75rem)]"}>
           {tab === "translate" && <TranslatePage key={reuse?.n ?? 0} overlay={overlay} onToggleOverlay={toggleOverlay} settings={settings} onOpenSettings={() => setTab("settings")} onExplore={(text, meanings) => { setExplore({ text, meanings }); setTab("explorer"); }} {...(reuse ? { initial: reuse.text } : {})} />}
-          {tab === "coworker" && <CoworkerPage onOpenSettings={() => setTab("settings")} />}
+          {tab === "tasks" && <TasksPage onOpenChat={(id) => { setChatSession({ id, n: Date.now() }); setTab("coworker"); }} />}
+          {tab === "coworker" && <CoworkerPage onOpenSettings={() => setTab("settings")} openSession={chatSession} />}
           {tab === "tools" && <ToolsPage />}
           {tab === "security" && <SecurityPage onOpenChat={() => setTab("coworker")} />}
           {tab === "activity" && <ActivityPage />}
