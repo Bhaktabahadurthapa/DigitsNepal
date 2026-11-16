@@ -32,7 +32,7 @@ export type CoworkerEvent = { session: string } & (
 
 export const cw = {
   status: () => invoke<Status>("coworker_status"),
-  addGrant: () => invoke<Grant | null>("coworker_add_grant"),
+  addGrant: (path?: string) => invoke<Grant | null>("coworker_add_grant", { path: path ?? null }),
   revokeGrant: (id: number) => invoke<void>("coworker_revoke_grant", { id }),
   sessions: () => invoke<SessionRow[]>("coworker_sessions"),
   messages: (session: string) => invoke<Message[]>("coworker_messages", { session }),

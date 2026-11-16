@@ -47,7 +47,9 @@ enum Pending {
 
 struct Engine {
     harness: Harness,
-    connections: HashSet<String>,
+    /// Upstream connection name → name actually registered with the engine.
+    connections: HashMap<String, String>,
+    relays: HashMap<String, super::relay::Relay>,
     agents: HashSet<String>,
     mcp: HashSet<String>,
 }
@@ -126,7 +128,8 @@ impl Coworker {
             register_local_tools(&harness, self.ledger.clone(), self.cfg.backup_dir.clone()).await?;
             *guard = Some(Engine {
                 harness,
-                connections: HashSet::new(),
+                connections: HashMap::new(),
+                relays: HashMap::new(),
                 agents: HashSet::new(),
                 mcp: HashSet::new(),
             });
@@ -151,14 +154,46 @@ impl Coworker {
     ) -> Result<String, CoworkerError> {
         let mut guard = self.ensure_engine().await?;
         let engine = guard.as_mut().expect("engine started");
-        if engine.connections.insert(spec.connection.clone()) {
-            if let Err(e) = engine.harness.set_model_provider(providers::to_engine(spec)).await {
-                engine.connections.remove(&spec.connection);
-                return Err(CoworkerError::Provider(format!(
-                    "Could not connect the AI provider: {e}"
-                )));
+        let connection = match engine.connections.get(&spec.connection) {
+            Some(c) => c.clone(),
+            None => {
+                let engine_spec = self.engine_spec(engine, spec).await?;
+                let mut name = engine_spec.connection.clone();
+                if let Err(e) = engine
+                    .harness
+                    .set_model_provider(providers::to_engine(&engine_spec))
+                    .await
+                {
+                    // A moved relay port changes the endpoint, which the engine
+                    // treats as a new connection identity.
+                    let port = engine_spec
+                        .base_url
+                        .rsplit(':')
+                        .next()
+                        .unwrap_or("")
+                        .split('/')
+                        .next()
+                        .unwrap_or("")
+                        .to_string();
+                    name = format!("{}-p{port}", engine_spec.connection);
+                    let retry = ProviderSpec {
+                        connection: name.clone(),
+                        ..engine_spec
+                    };
+                    engine
+                        .harness
+                        .set_model_provider(providers::to_engine(&retry))
+                        .await
+                        .map_err(|_| CoworkerError::Provider(format!("Could not connect the AI provider: {e}")))?;
+                }
+                engine.connections.insert(spec.connection.clone(), name.clone());
+                name
             }
-        }
+        };
+        let spec = &ProviderSpec {
+            connection,
+            ..spec.clone()
+        };
         let (name, instructions, tools): (&str, &str, Vec<String>) = match specialist {
             Specialist::General => (
                 "General Coworker",
@@ -237,6 +272,35 @@ impl Coworker {
             engine.agents.insert(id.clone());
         }
         Ok(id)
+    }
+
+    /// Cloud OpenAI-compatible providers go through the local compatibility
+    /// relay (which also keeps the real key out of the engine). Gemini and
+    /// local servers connect directly.
+    async fn engine_spec(&self, engine: &mut Engine, spec: &ProviderSpec) -> Result<ProviderSpec, CoworkerError> {
+        let needs_relay = spec.api == providers::Api::ChatCompletions
+            && spec.cloud
+            && !spec.base_url.contains("generativelanguage.googleapis.com");
+        if !needs_relay {
+            return Ok(spec.clone());
+        }
+        if !engine.relays.contains_key(&spec.connection) {
+            let key = format!("relay_port:{}", spec.connection);
+            let port: u16 = self.ledger.kv_get(&key).and_then(|p| p.parse().ok()).unwrap_or(0);
+            let relay = super::relay::start(port, &spec.base_url, spec.key.clone())
+                .await
+                .map_err(|e| CoworkerError::Setup(format!("Could not start the provider relay: {e}")))?;
+            if let Some(p) = relay.base_url.rsplit(':').next().and_then(|x| x.split('/').next()) {
+                self.ledger.kv_set(&key, p).ok();
+            }
+            engine.relays.insert(spec.connection.clone(), relay);
+        }
+        let r = &engine.relays[&spec.connection];
+        Ok(ProviderSpec {
+            base_url: r.base_url.clone(),
+            key: Some(r.token.clone()),
+            ..spec.clone()
+        })
     }
 
     // ---- Sessions -----------------------------------------------------------
@@ -384,8 +448,9 @@ impl Coworker {
                         .provider_error
                         .map(|d| {
                             format!(
-                                "{:?}{}",
+                                "{:?}{}{}",
                                 d.category,
+                                d.code.map(|c| format!(" [{c}]")).unwrap_or_default(),
                                 d.http_status.map(|s| format!(" (HTTP {s})")).unwrap_or_default()
                             )
                         })

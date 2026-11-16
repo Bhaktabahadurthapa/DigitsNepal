@@ -123,6 +123,10 @@ export function CoworkerPage({ onOpenSettings, start }: { onOpenSettings: () => 
           ) : (
             <p className="text-[12px] text-muted">No folders yet. The coworker can only use folders you add.</p>
           )}
+          <form className="mt-2 flex gap-1" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget).get("p")?.toString() ?? ""; if (f.trim()) void cw.addGrant(f).then(() => { (e.target as HTMLFormElement).reset(); void refresh(); }).catch((x) => setError(toAppError(x))); }}>
+            <label htmlFor="grant-path" className="sr-only">Folder path</label>
+            <input id="grant-path" name="p" placeholder="or type a folder path" className="min-w-0 flex-1 rounded border border-line bg-surface px-1.5 py-0.5 text-[11.5px]" />
+          </form>
         </section>
         <section className="min-h-0 flex-1 overflow-auto" aria-label="Conversations">
           <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Conversations</h2>

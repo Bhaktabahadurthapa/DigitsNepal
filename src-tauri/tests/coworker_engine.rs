@@ -21,7 +21,13 @@ type Script = Arc<dyn Fn(&Value) -> Reply + Send + Sync>;
 
 enum Reply {
     Text(String),
-    Tool { name_suffix: &'static str, args: Value },
+    /// Token Lab's real stream shape: a usage tail, then a second gateway
+    /// accounting chunk with a different id.
+    GatewayTail(String),
+    Tool {
+        name_suffix: &'static str,
+        args: Value,
+    },
     Fail,
 }
 
@@ -94,6 +100,16 @@ async fn model_server(script: Script) -> String {
                         "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
                         json!({"id":"r","choices":[{"index":0,"delta":{"role":"assistant","content":t},"finish_reason":null}]}),
                         json!({"id":"r","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]})
+                    ),
+                ),
+                Reply::GatewayTail(t) => (
+                    "200 OK",
+                    format!(
+                        "data: {}\nid: 0\n\ndata: {}\nid: 1\n\ndata: {}\nid: 2\n\ndata: {}\nid: 3\n\nevent: done\ndata: [DONE]\nid: 4\n\n",
+                        json!({"id":"g1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":t,"reasoning_content":null},"logprobs":null,"finish_reason":null,"matched_stop":null}],"usage":null}),
+                        json!({"id":"g1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":null},"finish_reason":"stop","matched_stop":1}]}),
+                        json!({"id":"g1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}),
+                        json!({"id":"chatcmpl-gateway","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":null}],"usage":{"prompt_tokens":10,"completion_tokens":5,"cost":0.00001}})
                     ),
                 ),
                 Reply::Tool { name_suffix, args } => {
@@ -484,4 +500,19 @@ async fn a_session_continues_after_restart() {
     let done = wait_for(&r2.events, |v| v["type"] == "done").await;
     assert_eq!(done["text"], "user messages seen: 2", "history survives a restart");
     r2.cw.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn token_lab_gateway_stream_works_through_the_relay() {
+    let script: Script = Arc::new(|_| Reply::GatewayTail("Namaste from Token Lab".into()));
+    let Some(mut r) = rig(script, None).await else { return };
+    // Treat the mock as a cloud OpenAI-compatible provider, so the relay is used.
+    r.spec.cloud = true;
+    r.spec.key = Some("real-provider-key".into());
+    let s = r.cw.new_session(&r.spec, Specialist::General, None).await.unwrap();
+    r.cw.send(&s.id, "namaste", &r.spec).await.unwrap();
+    let done = wait_for(&r.events, |v| v["type"] == "done" || v["type"] == "error").await;
+    assert_eq!(done["type"], "done", "{done}");
+    assert_eq!(done["text"], "Namaste from Token Lab");
+    r.cw.shutdown().await;
 }

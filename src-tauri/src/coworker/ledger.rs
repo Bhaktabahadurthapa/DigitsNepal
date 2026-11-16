@@ -141,6 +141,7 @@ impl Ledger {
              CREATE TABLE IF NOT EXISTS sessions(
                id TEXT PRIMARY KEY, agent TEXT NOT NULL, specialist TEXT NOT NULL, title TEXT NOT NULL,
                created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+             CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);
              CREATE TABLE IF NOT EXISTS messages(
                id INTEGER PRIMARY KEY, session TEXT NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL, ts INTEGER NOT NULL);
              CREATE INDEX IF NOT EXISTS messages_session ON messages(session, id);
@@ -321,6 +322,24 @@ impl Ledger {
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn kv_get(&self, key: &str) -> Option<String> {
+        self.conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT value FROM kv WHERE key=?1", [key], |r| r.get(0))
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    pub fn kv_set(&self, key: &str, value: &str) -> Result<(), LedgerError> {
+        self.conn.lock().unwrap().execute(
+            "INSERT INTO kv(key, value) VALUES(?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
     }
 
     pub fn add_message(&self, session: &str, role: &str, text: &str) -> Result<(), LedgerError> {

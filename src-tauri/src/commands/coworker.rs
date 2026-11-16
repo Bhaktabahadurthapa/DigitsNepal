@@ -57,17 +57,42 @@ pub fn coworker_status(state: State<AppState>, cw: State<CoworkerState>) -> CmdR
 }
 
 /// Opens the native folder picker; only a folder the user picks is granted.
+/// `path` lets the user type a folder instead (still an explicit user action).
 #[tauri::command]
-pub async fn coworker_add_grant(app: tauri::AppHandle, cw: State<'_, CoworkerState>) -> CmdResult<Option<Grant>> {
-    let picked = app
-        .dialog()
-        .file()
-        .set_title("Give DigitsNepal Coworker access to a folder")
-        .blocking_pick_folder();
-    let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
-        return Ok(None);
+pub async fn coworker_add_grant(
+    app: tauri::AppHandle,
+    path: Option<String>,
+    cw: State<'_, CoworkerState>,
+) -> CmdResult<Option<Grant>> {
+    let chosen = match path.filter(|p| !p.trim().is_empty()) {
+        Some(p) => Some(std::path::PathBuf::from(p.trim())),
+        None => {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            app.dialog()
+                .file()
+                .set_title("Give DigitsNepal Coworker access to a folder")
+                .pick_folder(move |p| {
+                    let _ = tx.send(p);
+                });
+            match rx.await.ok().flatten() {
+                None => None,
+                Some(fp) => Some(
+                    fp.into_path()
+                        .map_err(|e| err("grant", format!("Could not read the chosen folder: {e}")))?,
+                ),
+            }
+        }
     };
-    let g = cw.0.ledger.add_grant(&path).map_err(le)?;
+    let Some(path) = chosen else { return Ok(None) };
+    let g = cw.0.ledger.add_grant(&path).map_err(|e| {
+        err(
+            "grant",
+            format!(
+                "{e} ({}). If macOS asked to allow access to this folder, choose Allow and try again.",
+                path.display()
+            ),
+        )
+    })?;
     cw.0.ledger
         .record("", "user", "grant", "", &serde_json::Value::Null, "granted", &g.path)
         .map_err(le)?;
