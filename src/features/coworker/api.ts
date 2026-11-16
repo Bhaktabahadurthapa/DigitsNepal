@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 export type Decision = "once" | "session" | "deny";
 export interface Grant { id: number; path: string; created_at: number }
 export interface SessionRow { id: string; agent: string; specialist: string; title: string; created_at: number; updated_at: number }
+export interface Specialist { key: string; name: string; nepali: string; summary: string; icon: string; version: number; tools: string[]; examples: string[] }
 export interface Message { role: string; text: string; ts: number }
 export interface Status { provider_ready: boolean; provider_problem: string | null; model: string | null; grants: Grant[]; audit_intact: boolean }
 export interface AuditEntry { seq: number; ts: number; session: string; actor: string; kind: string; tool: string; args_digest: string; decision: string; detail: string; hash: string }
@@ -33,7 +34,8 @@ export const cw = {
   revokeGrant: (id: number) => invoke<void>("coworker_revoke_grant", { id }),
   sessions: () => invoke<SessionRow[]>("coworker_sessions"),
   messages: (session: string) => invoke<Message[]>("coworker_messages", { session }),
-  newSession: () => invoke<SessionRow>("coworker_new_session"),
+  newSession: (specialist?: string) => invoke<SessionRow>("coworker_new_session", { specialist: specialist ?? null }),
+  specialists: () => invoke<Specialist[]>("coworker_specialists"),
   send: (session: string, text: string) => invoke<void>("coworker_send", { session, text }),
   decide: (id: string, decision: Decision) => invoke<boolean>("coworker_decide", { id, decision }),
   answer: (id: string, text: string) => invoke<boolean>("coworker_answer", { id, text }),

@@ -1,20 +1,19 @@
 import { listen } from "@tauri-apps/api/event";
 import {
-  AlertTriangle, ArrowUp, Ban, Check, ChevronDown, FileSearch, FileText, Folder, FolderOpen, FolderPlus, Languages,
-  Loader2, MessageSquare, Plus, ShieldAlert, ShieldCheck, Sparkles, Square, X,
+  AlertTriangle, ArrowUp, Ban, Check, ChevronDown, Code, FileText, Folder, FolderOpen, FolderPlus,
+  Loader2, PenLine, Plus, Search, ShieldAlert, ShieldCheck, Sparkles, Square, Workflow, X, type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, ErrorBanner } from "../../components/ui";
 import { toAppError } from "../../providers/api";
 import type { AppError } from "../../types/translation";
-import { cw, type CoworkerEvent, type Decision, type SessionRow, type Status } from "./api";
+import { cw, type CoworkerEvent, type Decision, type SessionRow, type Specialist, type Status } from "./api";
 import { empty, reduce, type Item, type Transcript } from "./transcript";
 
-const EXAMPLES: { icon: typeof FileSearch; text: string; hint: string }[] = [
-  { icon: FileSearch, text: "mero downloads folder ma pdf haru khojera summarize gara", hint: "Find and summarize PDFs" },
-  { icon: Languages, text: "yo folder ma bhayeko meeting notes ko professional English summary banaideu", hint: "Professional meeting summary" },
-  { icon: FileText, text: "Find the newest text files in my Documents folder.", hint: "Search your documents" },
-];
+const ICONS: Record<string, LucideIcon> = {
+  sparkles: Sparkles, "pen-line": PenLine, search: Search, "file-text": FileText, code: Code, workflow: Workflow,
+};
+const iconFor = (s?: Specialist) => (s && ICONS[s.icon]) || Sparkles;
 
 function timeAgo(ms: number): string {
   const s = Math.max(1, Math.round((Date.now() - ms) / 1000));
@@ -33,6 +32,8 @@ export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void })
   const [path, setPath] = useState("");
   const [error, setError] = useState<AppError | null>(null);
   const [busy, setBusy] = useState(false);
+  const [specialists, setSpecialists] = useState<Specialist[]>([]);
+  const [pick, setPick] = useState("general");
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -40,6 +41,7 @@ export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void })
     try {
       setStatus(await cw.status());
       setSessions(await cw.sessions());
+      setSpecialists(await cw.specialists());
     } catch (e) {
       setError(toAppError(e));
     }
@@ -75,7 +77,7 @@ export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void })
     setBusy(true);
     setError(null);
     try {
-      const s = await cw.newSession();
+      const s = await cw.newSession(pick);
       setSessions((all) => [s, ...all]);
       setTranscripts((all) => ({ ...all, [s.id]: empty }));
       setActive(s.id);
@@ -86,7 +88,7 @@ export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void })
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [pick]);
 
   const send = useCallback(
     async (text: string, session?: string | null) => {
@@ -119,12 +121,17 @@ export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void })
   };
 
   const t = active ? transcripts[active] ?? empty : empty;
+  const byKey = (k?: string) => specialists.find((s) => s.key === k);
+  const activeRow = sessions.find((s) => s.id === active);
+  // The specialist shown in the header: the open chat's, or the one picked for a new chat.
+  const current = byKey(activeRow ? activeRow.specialist : pick);
+  const startNew = () => { setActive(null); setError(null); inputRef.current?.focus(); };
 
   return (
     <div className="flex h-full min-h-0 bg-bg">
       {/* Left panel: new chat, folders, conversations */}
       <aside className="flex w-64 shrink-0 flex-col gap-4 border-r border-line bg-surface-2 p-3">
-        <Button variant="primary" className="w-full" onClick={() => void newSession()} disabled={busy}>
+        <Button variant="primary" className="w-full" onClick={startNew} disabled={busy}>
           <Plus size={15} aria-hidden /> New chat
         </Button>
 
@@ -171,7 +178,8 @@ export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void })
           ) : (
             <ul className="space-y-0.5">
               {sessions.map((s) => {
-                const Icon = MessageSquare;
+                const sp = byKey(s.specialist);
+                const Icon = iconFor(sp);
                 return (
                   <li key={s.id}>
                     <button
@@ -179,7 +187,7 @@ export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void })
                       aria-current={s.id === active ? "true" : undefined}
                       className={`flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-[12.5px] transition-colors ${s.id === active ? "bg-accent-soft font-medium text-ink" : "text-muted hover:bg-surface-2 hover:text-ink"}`}
                     >
-                      <Icon size={14} className="shrink-0" aria-hidden />
+                      <Icon size={14} className="shrink-0" aria-label={sp?.name} />
                       <span className="min-w-0 flex-1 truncate">{s.title}</span>
                       <span className="text-[10.5px] opacity-70">{timeAgo(s.updated_at)}</span>
                     </button>
@@ -195,12 +203,12 @@ export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void })
       <section className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-5">
           <div className="flex items-center gap-3">
-            <Avatar />
+            <Avatar icon={iconFor(current)} />
             <div>
-              <h1 className="text-[14px] font-semibold leading-tight">Sahayogi</h1>
+              <h1 className="text-[14px] font-semibold leading-tight">{current?.name ?? "Sahayogi"}{current && current.key !== "general" && <span className="ml-1.5 text-[12px] font-normal text-muted">{current.nepali}</span>}</h1>
               <p className="flex items-center gap-1.5 text-[11.5px] text-muted">
                 <span className={`h-1.5 w-1.5 rounded-full ${t.running ? "animate-pulse bg-accent" : status?.provider_ready ? "bg-ok" : "bg-warn-text"}`} aria-hidden />
-                {t.running ? "Working…" : status?.model ? status.model : "सहयोगी · your AI work assistant"}
+                {t.running ? "Working…" : status?.model ? status.model : current?.summary ?? "सहयोगी · your AI work assistant"}
                 {!!t.tokens && <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10.5px]" title="Tokens used in this chat">{t.tokens.toLocaleString()} tokens</span>}
               </p>
             </div>
@@ -226,11 +234,19 @@ export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void })
             <ErrorBanner error={error} title="Something went wrong" note={null} />
 
             {t.items.length === 0 ? (
-              <EmptyState onPick={(text) => { setInput(text); inputRef.current?.focus(); }} hasFolders={!!status?.grants.length} onAddFolder={() => void addFolder()} />
+              <EmptyState
+                specialists={specialists}
+                current={current}
+                canChoose={!active}
+                onChoose={setPick}
+                onPick={(text) => { setInput(text); inputRef.current?.focus(); }}
+                hasFolders={!!status?.grants.length}
+                onAddFolder={() => void addFolder()}
+              />
             ) : (
               <ol className="space-y-4" aria-live="polite">
                 {t.items.map((it, i) => (
-                  <ItemView key={i} item={it} onDecide={(id, d) => void cw.decide(id, d)} onAnswer={(id, a) => void cw.answer(id, a)} />
+                  <ItemView key={i} item={it} icon={iconFor(current)} who={current?.name ?? "Sahayogi"} onDecide={(id, d) => void cw.decide(id, d)} onAnswer={(id, a) => void cw.answer(id, a)} />
                 ))}
               </ol>
             )}
@@ -240,7 +256,7 @@ export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void })
 
         <form className="shrink-0 border-t border-line bg-surface px-6 py-3" onSubmit={(e) => { e.preventDefault(); void send(input); }}>
           <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-line bg-surface px-3 py-2 shadow-card transition-colors focus-within:border-accent">
-            <label htmlFor="cw-input" className="sr-only">Message Sahayogi</label>
+            <label htmlFor="cw-input" className="sr-only">Message {current?.name ?? "Sahayogi"}</label>
             <textarea
               id="cw-input"
               ref={inputRef}
@@ -248,7 +264,7 @@ export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void })
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(input); } }}
-              placeholder="Sahayogi lai sodhnuhos… (Romanized Nepali, नेपाली or English)"
+              placeholder={`${current?.name ?? "Sahayogi"} lai sodhnuhos… (Romanized Nepali, नेपाली or English)`}
               className="max-h-40 min-h-[36px] flex-1 resize-none bg-transparent py-1.5 text-[14px] leading-relaxed outline-none placeholder:text-muted"
               spellCheck={false}
             />
@@ -268,10 +284,10 @@ export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void })
   );
 }
 
-function Avatar({ size = 32 }: { size?: number }) {
+function Avatar({ size = 32, icon: Icon = Sparkles }: { size?: number; icon?: LucideIcon }) {
   return (
     <div className="flex shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent-fg" style={{ width: size, height: size }} aria-hidden>
-      <Sparkles size={size * 0.5} />
+      <Icon size={size * 0.5} />
     </div>
   );
 }
@@ -285,33 +301,61 @@ function Callout({ tone, icon, children }: { tone: "warn" | "info"; icon: ReactN
   );
 }
 
-function EmptyState({ onPick, hasFolders, onAddFolder }: { onPick: (t: string) => void; hasFolders: boolean; onAddFolder: () => void }) {
+function EmptyState({ specialists, current, canChoose, onChoose, onPick, hasFolders, onAddFolder }: {
+  specialists: Specialist[]; current?: Specialist; canChoose: boolean; onChoose: (key: string) => void;
+  onPick: (t: string) => void; hasFolders: boolean; onAddFolder: () => void;
+}) {
   return (
-    <div className="fade-in mx-auto max-w-xl pt-8 text-center">
-      <div className="mx-auto w-fit"><Avatar size={52} /></div>
+    <div className="fade-in mx-auto max-w-2xl pt-6 text-center">
+      <div className="mx-auto w-fit"><Avatar size={52} icon={iconFor(current)} /></div>
       <h2 className="mt-4 text-[20px] font-semibold tracking-tight">K garna sahayog garum?</h2>
-      <p className="mt-1.5 text-[13px] text-muted">Ask in your own words. Sahayogi reads the folders you share and asks before changing anything.</p>
+      <p className="mt-1.5 text-[13px] text-muted">Ask in your own words. Every specialist reads only the folders you share and asks before changing anything.</p>
       {!hasFolders && (
         <button onClick={onAddFolder} className="mx-auto mt-4 flex h-9 items-center gap-2 rounded-lg border border-dashed border-accent px-4 text-[12.5px] font-medium text-accent-fg transition-colors hover:bg-accent-soft">
           <FolderOpen size={15} aria-hidden /> Share a folder to get started
         </button>
       )}
-      <div className="mt-6 grid gap-2 text-left">
-        {EXAMPLES.map(({ icon: Icon, text, hint }) => (
-          <button key={text} onClick={() => onPick(text)} className="group flex items-start gap-3 rounded-xl border border-line bg-surface p-3 shadow-card transition-colors hover:border-accent hover:bg-accent-soft">
-            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent-fg group-hover:bg-surface"><Icon size={15} aria-hidden /></span>
-            <span>
-              <span className="block text-[11px] font-medium text-muted">{hint}</span>
-              <span className="block text-[13px] text-ink">{text}</span>
-            </span>
-          </button>
-        ))}
-      </div>
+      {canChoose && specialists.length > 0 && (
+        <fieldset className="mt-6 text-left">
+          <legend className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Choose a specialist</legend>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {specialists.map((s) => {
+              const Icon = iconFor(s);
+              const on = s.key === current?.key;
+              return (
+                <button
+                  key={s.key}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => onChoose(s.key)}
+                  className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left shadow-card transition-colors ${on ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-accent"}`}
+                >
+                  <span className="flex items-center gap-2 text-[13px] font-semibold text-ink">
+                    <Icon size={15} className="text-accent-fg" aria-hidden /> {s.name}
+                    <span className="text-[11.5px] font-normal text-muted">{s.nepali}</span>
+                  </span>
+                  <span className="text-[11.5px] leading-snug text-muted">{s.summary}</span>
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+      )}
+      {current && (
+        <div className="mt-5 grid gap-2 text-left">
+          {current.examples.map((text) => (
+            <button key={text} onClick={() => onPick(text)} className="group flex items-center gap-3 rounded-xl border border-line bg-surface p-3 shadow-card transition-colors hover:border-accent hover:bg-accent-soft">
+              <ArrowUp size={14} className="shrink-0 rotate-45 text-accent-fg" aria-hidden />
+              <span className="text-[13px] text-ink">{text}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function ItemView({ item, onDecide, onAnswer }: { item: Item; onDecide: (id: string, d: Decision) => void; onAnswer: (id: string, a: string) => void }) {
+function ItemView({ item, icon, who, onDecide, onAnswer }: { item: Item; icon: LucideIcon; who: string; onDecide: (id: string, d: Decision) => void; onAnswer: (id: string, a: string) => void }) {
   switch (item.kind) {
     case "user":
       return (
@@ -322,7 +366,7 @@ function ItemView({ item, onDecide, onAnswer }: { item: Item; onDecide: (id: str
     case "assistant":
       return (
         <li className="fade-in flex gap-3">
-          <Avatar size={28} />
+          <Avatar size={28} icon={icon} />
           <div data-selectable className="min-w-0 flex-1 whitespace-pre-wrap pt-0.5 text-[14px] leading-relaxed text-ink">
             {item.text}
             {item.streaming && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-accent align-middle" aria-hidden />}
@@ -354,11 +398,11 @@ function ItemView({ item, onDecide, onAnswer }: { item: Item; onDecide: (id: str
     case "question":
       return <QuestionCard item={item} onAnswer={onAnswer} />;
     case "approval":
-      return <ApprovalCard item={item} onDecide={onDecide} />;
+      return <ApprovalCard item={item} who={who} onDecide={onDecide} />;
   }
 }
 
-function ApprovalCard({ item, onDecide }: { item: Extract<Item, { kind: "approval" }>; onDecide: (id: string, d: Decision) => void }) {
+function ApprovalCard({ item, who, onDecide }: { item: Extract<Item, { kind: "approval" }>; who: string; onDecide: (id: string, d: Decision) => void }) {
   const [open, setOpen] = useState(false);
   const path = typeof item.args === "object" && item.args && "path" in item.args ? String((item.args as { path: unknown }).path) : null;
   return (
@@ -368,7 +412,7 @@ function ApprovalCard({ item, onDecide }: { item: Extract<Item, { kind: "approva
           {item.hardFloor ? <ShieldAlert size={18} aria-hidden /> : <ShieldCheck size={18} aria-hidden />}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[13.5px] font-semibold">Sahayogi wants to: {label(item.tool).toLowerCase()}</p>
+          <p className="text-[13.5px] font-semibold">{who} wants to: {label(item.tool).toLowerCase()}</p>
           {path && <p className="mt-0.5 truncate font-mono text-[11.5px] text-muted" title={path}>{path}</p>}
           <p className="mt-1 text-[12.5px] text-muted">{item.reason}</p>
           <button onClick={() => setOpen((o) => !o)} aria-expanded={open} className="mt-1.5 flex items-center gap-1 text-[12px] font-medium text-accent-fg">
@@ -414,6 +458,16 @@ function QuestionCard({ item, onAnswer }: { item: Extract<Item, { kind: "questio
 }
 
 const LABELS: Record<string, string> = {
+  "translation.explain": "Understanding your Nepali",
+  "translation.translate": "Translating",
+  "files.granted_folders": "Checking your shared folders",
+  "files.list": "Listing a folder",
+  "files.search": "Searching files",
+  "files.read": "Reading a file",
+  "files.read_pdf": "Reading a PDF",
+  "files.create": "Write a file",
+  "files.move": "Move a file",
+  // Conversations from earlier versions
   "dn.understand_text": "Understanding your Nepali",
   "dn.granted_folders": "Checking your shared folders",
   "dn.list_folder": "Listing a folder",

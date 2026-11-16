@@ -391,6 +391,7 @@ pub fn run() {
             commands::coworker::coworker_activity,
             #[cfg(feature = "coworker")]
             commands::coworker::coworker_pending,
+            commands::coworker::coworker_specialists,
             #[cfg(feature = "coworker")]
             commands::coworker::coworker_resume,
             #[cfg(feature = "coworker")]

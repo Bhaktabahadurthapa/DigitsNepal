@@ -29,6 +29,11 @@ enum Reply {
         name_suffix: &'static str,
         args: Value,
     },
+    /// A tool call by exact name, even one the agent was not offered.
+    RawTool {
+        name: String,
+        args: Value,
+    },
     Fail,
 }
 
@@ -122,8 +127,12 @@ async fn model_server(script: Script) -> String {
                         json!({"id":"chatcmpl-gateway","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":null}],"usage":{"prompt_tokens":10,"completion_tokens":5,"cost":0.00001}})
                     ),
                 ),
-                Reply::Tool { name_suffix, args } => {
-                    let name = tool_named(&req, name_suffix);
+                r @ (Reply::Tool { .. } | Reply::RawTool { .. }) => {
+                    let (name, args) = match r {
+                        Reply::Tool { name_suffix, args } => (tool_named(&req, name_suffix), args),
+                        Reply::RawTool { name, args } => (name, args),
+                        _ => unreachable!(),
+                    };
                     (
                         "200 OK",
                         format!(
@@ -643,5 +652,79 @@ async fn translation_tool_reuses_the_translation_engine() {
             .all(|v| v["type"] != "approval_required"),
         "read tool runs without asking"
     );
+    r.cw.shutdown().await;
+}
+
+fn offered(req: &Value) -> Vec<String> {
+    req["tools"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| t["function"]["name"].as_str().map(String::from))
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_read_only_specialist_cannot_write_even_if_the_model_tries() {
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let target = Arc::new(Mutex::new(String::new()));
+    let (s2, t2) = (seen.clone(), target.clone());
+    let script: Script = Arc::new(move |req| {
+        let tools = offered(req);
+        if tool_results(req).is_empty() {
+            *s2.lock().unwrap() = tools.clone();
+            // Forge a write call using the naming pattern of an offered tool.
+            let read = tools
+                .iter()
+                .find(|n| n.ends_with("files__read"))
+                .expect("read offered")
+                .clone();
+            Reply::RawTool {
+                name: read.replace("files__read", "files__create"),
+                args: json!({"path": t2.lock().unwrap().clone(), "content": "x"}),
+            }
+        } else {
+            Reply::Text("I can only read files.".into())
+        }
+    });
+    let Some(r) = rig(script, None).await else { return };
+    let forged = r.granted.join("forged.md");
+    *target.lock().unwrap() = forged.display().to_string();
+    let s = r.cw.new_session_as(&r.spec, "research").await.unwrap();
+    assert_eq!(s.specialist, "research");
+    assert!(s.agent.starts_with("dn-research-v1-"));
+    r.cw.send(&s.id, "write a file", &r.spec).await.unwrap();
+    wait_for(&r.events, |v| v["type"] == "done" || v["type"] == "error").await;
+    let tools = seen.lock().unwrap().clone();
+    assert!(tools.iter().any(|n| n.ends_with("files__read")), "{tools:?}");
+    assert!(
+        !tools
+            .iter()
+            .any(|n| n.contains("files__create") || n.contains("files__move")),
+        "research must not be offered write tools: {tools:?}"
+    );
+    assert!(!r
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|v| v["type"] == "approval_required"));
+    assert!(!forged.exists(), "an unoffered tool never runs");
+    r.cw.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn each_specialist_gets_its_own_definition_and_unknown_ones_are_refused() {
+    let script: Script = Arc::new(|_| Reply::Text("ok".into()));
+    let Some(r) = rig(script, None).await else { return };
+    let mut agents = std::collections::HashSet::new();
+    for key in ["general", "writer", "research", "document", "technical", "automation"] {
+        let s = r.cw.new_session_as(&r.spec, key).await.unwrap();
+        assert_eq!(s.specialist, key);
+        assert!(r.cw.ledger.definition(&s.agent).is_some(), "{key} definition stored");
+        agents.insert(s.agent);
+    }
+    assert_eq!(agents.len(), 6);
+    assert!(r.cw.new_session_as(&r.spec, "admin").await.is_err());
     r.cw.shutdown().await;
 }

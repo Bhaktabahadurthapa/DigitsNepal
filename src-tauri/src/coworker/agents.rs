@@ -57,18 +57,27 @@ impl AgentDefinition {
     }
 }
 
-/// The general DigitsNepal coworker (Sahayogi), version 2: typed tools.
-pub fn coworker(connection: &str, model: &str) -> AgentDefinition {
+/// The definition for a specialist on the given connection and model.
+pub fn for_specialist(s: &specialists::Specialist, connection: &str, model: &str) -> AgentDefinition {
     AgentDefinition {
-        key: "coworker".into(),
-        version: 2,
-        name: "Sahayogi".into(),
-        instructions: specialists::GENERAL_INSTRUCTIONS.into(),
-        tools: specialists::LOCAL_TOOLS.iter().map(|s| s.to_string()).collect(),
+        key: s.key.into(),
+        version: s.version,
+        name: s.name.into(),
+        instructions: s.instructions(),
+        tools: s.tools.iter().map(|t| t.to_string()).collect(),
         connection: connection.into(),
         model: model.into(),
         limits: Limits::default(),
     }
+}
+
+/// The general DigitsNepal coworker (Sahayogi).
+pub fn coworker(connection: &str, model: &str) -> AgentDefinition {
+    for_specialist(
+        specialists::find("general").expect("general specialist"),
+        connection,
+        model,
+    )
 }
 
 #[cfg(feature = "coworker")]
@@ -103,7 +112,7 @@ mod tests {
         let a = coworker("conn", "model-a");
         let b = coworker("conn", "model-b");
         assert_ne!(a.id(), b.id());
-        assert!(a.id().starts_with("dn-coworker-v2-"));
+        assert!(a.id().starts_with("dn-general-v3-"));
         let mut c = a.clone();
         c.limits.max_model_calls = 5;
         assert_ne!(a.id(), c.id());
@@ -112,11 +121,14 @@ mod tests {
     }
 
     #[test]
-    fn coworker_uses_only_registered_typed_tools() {
-        let d = coworker("c", "m");
-        for t in &d.tools {
-            assert!(super::super::tools::spec(t).is_some(), "{t} is not a registered tool");
-            assert_eq!(super::super::tools::canonical(t), t, "{t} must use the canonical name");
+    fn specialists_use_only_registered_typed_tools() {
+        for s in specialists::SPECIALISTS {
+            let d = for_specialist(s, "c", "m");
+            assert!(d.id().starts_with(&format!("dn-{}-v{}-", s.key, s.version)));
+            for t in &d.tools {
+                assert!(super::super::tools::spec(t).is_some(), "{t} is not a registered tool");
+                assert_eq!(super::super::tools::canonical(t), t, "{t} must use the canonical name");
+            }
         }
     }
 }

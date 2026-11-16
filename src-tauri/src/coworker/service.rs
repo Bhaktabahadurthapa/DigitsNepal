@@ -11,6 +11,7 @@ use super::agents::{self, AgentDefinition};
 use super::ledger::{Ledger, PendingRow, SessionRow};
 use super::policy::{self, Decision, ToolHints};
 use super::providers::{self, ProviderSpec};
+use super::specialists::{self, Specialist};
 use super::tools::{self, Translator};
 use openworker_sdk::agents::*;
 use openworker_sdk::{ApprovalDecision, Harness, Sandbox, Tool};
@@ -220,12 +221,12 @@ impl Coworker {
         Ok(id)
     }
 
-    /// The current coworker definition for this provider; returns its ID.
-    async fn prepare_agent(&self, spec: &ProviderSpec) -> Result<String, CoworkerError> {
+    /// The current definition of a specialist for this provider; returns its ID.
+    async fn prepare_agent(&self, spec: &ProviderSpec, specialist: &Specialist) -> Result<String, CoworkerError> {
         let mut guard = self.ensure_engine().await?;
         let engine = guard.as_mut().expect("engine started");
         let connection = self.ensure_connection(engine, spec).await?;
-        let def = agents::coworker(&connection, &spec.model);
+        let def = agents::for_specialist(specialist, &connection, &spec.model);
         self.register_definition(engine, &def).await
     }
 
@@ -260,8 +261,16 @@ impl Coworker {
 
     // ---- Sessions -----------------------------------------------------------
 
+    /// Start a conversation with the general coworker.
     pub async fn new_session(&self, spec: &ProviderSpec) -> Result<SessionRow, CoworkerError> {
-        let agent = self.prepare_agent(spec).await?;
+        self.new_session_as(spec, "general").await
+    }
+
+    /// Start a conversation with a specialist (`general`, `writer`, ...).
+    pub async fn new_session_as(&self, spec: &ProviderSpec, specialist: &str) -> Result<SessionRow, CoworkerError> {
+        let sp = specialists::find(specialist)
+            .ok_or_else(|| CoworkerError::Setup(format!("Unknown specialist: {specialist}")))?;
+        let agent = self.prepare_agent(spec, sp).await?;
         let guard = self.engine.lock().await;
         let harness = &guard.as_ref().expect("engine started").harness;
         std::fs::create_dir_all(&self.cfg.workspace_dir).map_err(|e| CoworkerError::Setup(e.to_string()))?;
@@ -273,7 +282,7 @@ impl Coworker {
         let row = SessionRow {
             id: session.id().to_string(),
             agent,
-            specialist: "general".into(),
+            specialist: sp.key.into(),
             title: "New conversation".into(),
             created_at: now,
             updated_at: now,

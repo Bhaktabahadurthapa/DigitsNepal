@@ -59,6 +59,27 @@ If the engine cannot tell whether a request finished, it is not retried.
 **Token usage**: recorded per model call from the engine's `model_usage`
 events (`usage` table) and shown as a token count in the chat header.
 
+## Specialists (Phase 4)
+
+A new chat starts by choosing a specialist. Each one has its own role and only
+the tools that role needs; the policy engine still decides every call, so a
+specialist can never do more than its tool list allows. A model that names a
+tool its specialist was not given gets nothing (tested end to end).
+
+| Specialist | Role | Tools |
+|---|---|---|
+| Sahayogi (सहयोगी) | General coworker | All local tools |
+| Lekhak (लेखक) | Nepali–English writer: translate, polish, draft | Translation, read files, create file |
+| Khoji (खोजी) | Research from your own documents, with citations | Translation, read files (read-only) |
+| Kagaj (कागज) | Create and organize documents | Translation, read, create, move |
+| Prabidhi (प्रविधि) | Explain, review and draft code | Explain, read, create (cannot run code) |
+| Swachalit (स्वचालित) | Plan repeatable workflows | Read only (cannot run or schedule yet) |
+
+Each specialist is stored as its own immutable, versioned definition
+(`dn-<key>-v<version>-<digest>`). Web search, GitHub and running automations
+arrive with the Phase 5 tools; until then those specialists say so instead of
+pretending.
+
 ## What runs automatically, what asks, what is refused
 
 | Action | Decision |

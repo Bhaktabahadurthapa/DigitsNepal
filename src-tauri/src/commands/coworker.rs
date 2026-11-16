@@ -170,9 +170,13 @@ pub fn coworker_messages(session: String, cw: State<CoworkerState>) -> CmdResult
 }
 
 #[tauri::command]
-pub async fn coworker_new_session(state: State<'_, AppState>, cw: State<'_, CoworkerState>) -> CmdResult<SessionRow> {
+pub async fn coworker_new_session(
+    specialist: Option<String>,
+    state: State<'_, AppState>,
+    cw: State<'_, CoworkerState>,
+) -> CmdResult<SessionRow> {
     let spec = spec(&state)?;
-    cw.0.new_session(&spec)
+    cw.0.new_session_as(&spec, specialist.as_deref().unwrap_or("general"))
         .await
         .map_err(|e| err("coworker", e.to_string()))
 }
@@ -224,6 +228,12 @@ pub fn coworker_activity(limit: Option<usize>, cw: State<CoworkerState>) -> CmdR
         intact: broken.is_none(),
         broken_at: broken,
     })
+}
+
+/// The specialists a conversation can start with (for the picker).
+#[tauri::command]
+pub fn coworker_specialists() -> Vec<crate::coworker::specialists::Specialist> {
+    crate::coworker::specialists::SPECIALISTS.to_vec()
 }
 
 #[tauri::command]
