@@ -993,6 +993,7 @@ dependencies = [
  "core-foundation 0.10.1",
  "futures-util",
  "keyring",
+ "libc",
  "log",
  "openworker-sdk",
  "reqwest 0.12.28",

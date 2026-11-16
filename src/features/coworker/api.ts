@@ -8,6 +8,10 @@ export interface Specialist { key: string; name: string; nepali: string; summary
 export interface McpTool { name: string; description: string; input_schema: unknown; read_only: boolean; destructive: boolean }
 export interface McpServer { name: string; url: string; tools: McpTool[]; enabled: string[]; created_at: number }
 export interface Automation { id: number; name: string; description: string; steps: { tool: string; args: Record<string, unknown>; note?: string }[]; created_at: number; last_run_at: number | null; runs: number }
+export interface Security { paused: boolean; network_off: boolean; code_enabled: boolean }
+export interface SecurityStatus extends Security { sandbox_available: boolean; python: string | null; javascript: string | null }
+export interface Standing { session: string; tool: string; created_at: number; title: string }
+export interface PendingItem { id: string; session: string; kind: string; tool: string; preview: unknown; reason: string; standing_ok: boolean; hard_floor: boolean; created_at: number; live: boolean }
 export interface Message { role: string; text: string; ts: number }
 export interface Status { provider_ready: boolean; provider_problem: string | null; model: string | null; grants: Grant[]; audit_intact: boolean }
 export interface AuditEntry { seq: number; ts: number; session: string; actor: string; kind: string; tool: string; args_digest: string; decision: string; detail: string; hash: string }
@@ -50,7 +54,12 @@ export const cw = {
   answer: (id: string, text: string) => invoke<boolean>("coworker_answer", { id, text }),
   cancel: (session: string) => invoke<void>("coworker_cancel", { session }),
   activity: (limit?: number) => invoke<Activity>("coworker_activity", { limit: limit ?? null }),
-  pending: () => invoke<{ id: string; session: string; kind: string; tool: string }[]>("coworker_pending"),
+  pending: () => invoke<PendingItem[]>("coworker_pending"),
+  security: () => invoke<SecurityStatus>("coworker_security"),
+  setSecurity: (switches: Security) => invoke<void>("coworker_set_security", { switches }),
+  standing: () => invoke<Standing[]>("coworker_standing"),
+  revokeStanding: (session?: string, tool?: string) => invoke<number>("coworker_revoke_standing", { session: session ?? null, tool: tool ?? null }),
+  stopAll: () => invoke<number>("coworker_stop_all"),
   resume: (session: string) => invoke<boolean>("coworker_resume", { session }),
   usage: (session?: string) => invoke<{ input_tokens: number; output_tokens: number }>("coworker_usage", { session: session ?? null }),
 };

@@ -126,8 +126,8 @@ impl Coworker {
             .mcp_servers()
             .into_iter()
             .flat_map(|s| {
-                let ns = super::mcp::namespace(&s.name);
-                s.enabled.into_iter().map(move |t| format!("{ns}.{t}"))
+                let name = s.name.clone();
+                s.enabled.into_iter().map(move |t| super::mcp::qualified(&name, &t))
             })
             .collect()
     }
@@ -135,10 +135,9 @@ impl Coworker {
     fn refresh_hints(&self) {
         let mut h = HashMap::new();
         for s in self.ledger.mcp_servers() {
-            let ns = super::mcp::namespace(&s.name);
             for t in &s.tools {
                 h.insert(
-                    format!("{ns}.{}", t.name),
+                    super::mcp::qualified(&s.name, &t.name),
                     ToolHints {
                         read_only: t.read_only,
                         destructive: t.destructive,
@@ -153,9 +152,9 @@ impl Coworker {
     /// tool disabled. The user then enables tools one by one.
     pub async fn add_mcp_server(&self, name: &str, url: &str) -> Result<super::ledger::McpServerRow, CoworkerError> {
         let name = name.trim().to_ascii_lowercase();
-        if !super::mcp::valid_name(&name, 20) {
+        if !super::mcp::valid_server_name(&name) {
             return Err(CoworkerError::Setup(
-                "Use a short name: lowercase letters, digits or _ (e.g. notion).".into(),
+                "Use a short name of lowercase letters and digits (e.g. notion).".into(),
             ));
         }
         if self.ledger.mcp_servers().iter().any(|s| s.name == name) {
@@ -166,7 +165,7 @@ impl Coworker {
         let tools = super::mcp::discover(url.trim()).await.map_err(CoworkerError::Setup)?;
         let tools: Vec<_> = tools
             .into_iter()
-            .filter(|t| super::mcp::valid_name(&t.name, 60))
+            .filter(|t| super::mcp::valid_name(&t.name, 50))
             .collect();
         let row = super::ledger::McpServerRow {
             name: name.clone(),
@@ -658,6 +657,7 @@ impl Coworker {
                 let roots = self.ledger.granted_roots();
                 let hints = self.hints.read().unwrap().clone();
                 let ledger = self.ledger.clone();
+                let security = self.ledger.security();
                 let lookup = move |name: &str| tools::automation_steps(&ledger, name);
                 let decision = policy::evaluate(
                     &q,
@@ -666,6 +666,7 @@ impl Coworker {
                         roots: &roots,
                         hints: &hints,
                         automation: &lookup,
+                        security: &security,
                     },
                 );
                 let response = match &decision {
@@ -681,6 +682,22 @@ impl Coworker {
                             .ok();
                         self.emit(sid, "denied", json!({"tool": q, "reason": reason}));
                         Response::Deny
+                    }
+                    // "Allow for this chat" is kept by DigitsNepal (revocable in
+                    // the Security Center), not by the engine.
+                    Decision::Ask { standing_ok: true, .. } if self.ledger.has_standing(sid, &q) => {
+                        self.ledger
+                            .record(
+                                sid,
+                                "policy",
+                                "tool_call",
+                                &q,
+                                arguments,
+                                "allow",
+                                "You allowed this for this chat.",
+                            )
+                            .ok();
+                        Response::Approve(ApprovalDecision::Once)
                     }
                     Decision::Ask {
                         reason,
@@ -739,7 +756,12 @@ impl Coworker {
                         self.emit(sid, "approval_resolved", json!({"id": i.id, "decision": effective}));
                         match effective {
                             UserDecision::Once => Response::Approve(ApprovalDecision::Once),
-                            UserDecision::Session => Response::Approve(ApprovalDecision::Session),
+                            UserDecision::Session => {
+                                self.ledger.add_standing(sid, &q).ok();
+                                // The engine approves only this call; later calls come
+                                // back through policy, so revoking takes effect at once.
+                                Response::Approve(ApprovalDecision::Once)
+                            }
                             UserDecision::Deny => Response::Deny,
                         }
                     }
@@ -820,10 +842,29 @@ impl Coworker {
             .record(session_id, "user", "cancel", "", &Value::Null, "cancelled", "")
             .ok();
     }
+
+    /// Emergency stop: cancel every running or waiting chat.
+    pub async fn stop_all(&self) -> usize {
+        let mut ids: HashSet<String> = self.sessions.lock().unwrap().keys().cloned().collect();
+        ids.extend(self.pending().into_iter().map(|p| p.session));
+        for id in &ids {
+            self.cancel(id).await;
+        }
+        ids.len()
+    }
+
+    /// Whether an open approval can be answered right now (its chat is
+    /// waiting in this launch) rather than after reopening the chat.
+    pub fn is_live(&self, id: &str) -> bool {
+        self.pending.lock().unwrap().contains_key(id)
+    }
 }
 
 fn preview(v: Option<&Value>) -> Value {
     match v {
+        // Code is always shown in full (capped at 20,000 characters by its
+        // schema): the user must see exactly what they approve.
+        Some(v) if v.get("code").is_some_and(Value::is_string) => v.clone(),
         Some(v) => {
             let s = v.to_string();
             if s.len() <= 4000 {
@@ -863,6 +904,7 @@ async fn register_tools(
                     backups: backups.clone(),
                     translator: translator.read().unwrap().clone(),
                     web: web.clone(),
+                    sandbox_dir: backups.with_file_name("sandbox"),
                 };
                 let name = name.clone();
                 async move { Ok(tools::run_guarded(&name, args, &deps, &ctx.session_id, ctx.cancellation()).await) }
@@ -879,17 +921,23 @@ async fn register_tools(
     }
     // Tools of connected MCP apps the user enabled.
     for server in ledger.mcp_servers() {
-        let ns = super::mcp::namespace(&server.name);
         for t in server.tools.iter().filter(|t| server.enabled.contains(&t.name)) {
-            let (url, remote, qualified) = (server.url.clone(), t.name.clone(), format!("{ns}.{}", t.name));
+            let (url, remote, qualified) = (
+                server.url.clone(),
+                t.name.clone(),
+                super::mcp::qualified(&server.name, &t.name),
+            );
             let ledger = ledger.clone();
-            let tool = Tool::new(t.name.clone())
+            let tool = Tool::new(super::mcp::short_name(&server.name, &t.name))
                 .description(format!("[Connected app: {}] {}", server.name, t.description))
                 .input_schema(t.input_schema.clone())
                 .handler(move |args: Value, ctx| {
                     let (url, remote, qualified, ledger) =
                         (url.clone(), remote.clone(), qualified.clone(), ledger.clone());
                     async move {
+                        if let Some(why) = tools::blocked_by_security(&ledger, tools::Risk::Egress) {
+                            return Ok(json!({"error": why}));
+                        }
                         let fut = super::mcp::call(&url, &remote, args.clone());
                         Ok(tools::guard(
                             &ledger,
@@ -903,7 +951,7 @@ async fn register_tools(
                         .await)
                     }
                 });
-            by_ns.entry(ns.clone()).or_default().push(tool);
+            by_ns.entry(super::mcp::NAMESPACE.to_string()).or_default().push(tool);
         }
     }
     for (ns, list) in by_ns {

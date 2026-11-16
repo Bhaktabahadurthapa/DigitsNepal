@@ -405,6 +405,7 @@ function ItemView({ item, icon, who, onDecide, onAnswer }: { item: Item; icon: L
 function ApprovalCard({ item, who, onDecide }: { item: Extract<Item, { kind: "approval" }>; who: string; onDecide: (id: string, d: Decision) => void }) {
   const [open, setOpen] = useState(false);
   const path = typeof item.args === "object" && item.args && "path" in item.args ? String((item.args as { path: unknown }).path) : null;
+  const code = typeof item.args === "object" && item.args && typeof (item.args as { code?: unknown }).code === "string" ? (item.args as { code: string }).code : null;
   return (
     <li className={`fade-in ml-10 overflow-hidden rounded-xl border bg-surface shadow-card ${item.hardFloor ? "border-warn-text/40" : "border-accent"}`}>
       <div className="flex items-start gap-3 p-4">
@@ -415,6 +416,7 @@ function ApprovalCard({ item, who, onDecide }: { item: Extract<Item, { kind: "ap
           <p className="text-[13.5px] font-semibold">{who} wants to: {label(item.tool).toLowerCase()}</p>
           {(path ?? target(item.args)) && <p className="mt-0.5 truncate font-mono text-[11.5px] text-muted" title={path ?? target(item.args) ?? ""}>{path ?? target(item.args)}</p>}
           <p className="mt-1 whitespace-pre-line text-[12.5px] text-muted">{item.reason}</p>
+          {code && <pre data-selectable aria-label="Code to run" className="mt-2 max-h-72 overflow-auto rounded-lg bg-surface-2 p-2.5 font-mono text-[11.5px] leading-relaxed">{code}</pre>}
           <button onClick={() => setOpen((o) => !o)} aria-expanded={open} className="mt-1.5 flex items-center gap-1 text-[12px] font-medium text-accent-fg">
             <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} aria-hidden /> {open ? "Hide details" : "Show details"}
           </button>
@@ -484,6 +486,7 @@ const LABELS: Record<string, string> = {
   "automation.create": "Save an automation",
   "automation.list": "Checking saved automations",
   "automation.run": "Run an automation",
+  "code.run": "Run code in the sandbox",
   // Conversations from earlier versions
   "dn.understand_text": "Understanding your Nepali",
   "dn.granted_folders": "Checking your shared folders",
@@ -494,5 +497,5 @@ const LABELS: Record<string, string> = {
   "dn.write_file": "Write a file",
 };
 export const label = (tool: string) =>
-  LABELS[tool] ?? (tool.startsWith("mcp_") ? `${tool.slice(4).replace(".", ": ")} (connected app)` : tool);
+  LABELS[tool] ?? (tool.startsWith("apps.") ? `${tool.slice(5).replace("_", ": ")} (connected app)` : tool);
 

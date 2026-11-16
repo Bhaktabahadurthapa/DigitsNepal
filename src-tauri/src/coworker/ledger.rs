@@ -77,6 +77,25 @@ pub struct Ledger {
     conn: Mutex<Connection>,
 }
 
+/// Global safety switches, set only by the user in the Security Center.
+#[derive(Debug, Clone, Copy, Default, Serialize, serde::Deserialize, PartialEq)]
+pub struct Security {
+    /// Every tool call is refused.
+    pub paused: bool,
+    /// Web, GitHub and connected-app tools are refused.
+    pub network_off: bool,
+    /// `code.run` may be used (still asks each time). Off by default.
+    pub code_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StandingRow {
+    pub session: String,
+    pub tool: String,
+    pub created_at: i64,
+    pub title: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AutomationRow {
     pub id: i64,
@@ -176,6 +195,8 @@ impl Ledger {
              CREATE TABLE IF NOT EXISTS automations(
                id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT NOT NULL, steps TEXT NOT NULL,
                created_at INTEGER NOT NULL, last_run_at INTEGER, runs INTEGER NOT NULL DEFAULT 0);
+             CREATE TABLE IF NOT EXISTS standing_approvals(
+               session TEXT NOT NULL, tool TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(session, tool));
              CREATE TABLE IF NOT EXISTS mcp_servers(
                name TEXT PRIMARY KEY, url TEXT NOT NULL, tools TEXT NOT NULL, enabled TEXT NOT NULL, created_at INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS messages(
@@ -238,6 +259,78 @@ impl Ledger {
             .unwrap()
             .execute("DELETE FROM automations WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    // ---- Security settings and standing approvals ---------------------------
+
+    pub fn security(&self) -> Security {
+        let flag = |k: &str| self.kv_get(k).is_some_and(|v| v == "1");
+        Security {
+            paused: flag("security.paused"),
+            network_off: flag("security.network_off"),
+            code_enabled: flag("security.code_enabled"),
+        }
+    }
+
+    pub fn set_security(&self, s: &Security) -> Result<(), LedgerError> {
+        let b = |v: bool| if v { "1" } else { "0" };
+        self.kv_set("security.paused", b(s.paused))?;
+        self.kv_set("security.network_off", b(s.network_off))?;
+        self.kv_set("security.code_enabled", b(s.code_enabled))?;
+        Ok(())
+    }
+
+    pub fn add_standing(&self, session: &str, tool: &str) -> Result<(), LedgerError> {
+        self.conn.lock().unwrap().execute(
+            "INSERT OR IGNORE INTO standing_approvals(session, tool, created_at) VALUES(?1,?2,?3)",
+            params![session, tool, now()],
+        )?;
+        Ok(())
+    }
+
+    pub fn has_standing(&self, session: &str, tool: &str) -> bool {
+        self.conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT 1 FROM standing_approvals WHERE session = ?1 AND tool = ?2",
+                params![session, tool],
+                |_| Ok(()),
+            )
+            .is_ok()
+    }
+
+    pub fn standing(&self) -> Vec<StandingRow> {
+        let c = self.conn.lock().unwrap();
+        let Ok(mut st) = c.prepare(
+            "SELECT a.session, a.tool, a.created_at, COALESCE(s.title, '') FROM standing_approvals a
+             LEFT JOIN sessions s ON s.id = a.session ORDER BY a.created_at DESC",
+        ) else {
+            return Vec::new();
+        };
+        st.query_map([], |r| {
+            Ok(StandingRow {
+                session: r.get(0)?,
+                tool: r.get(1)?,
+                created_at: r.get(2)?,
+                title: r.get(3)?,
+            })
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// Revoke one standing approval, or all of them when `tool` is None.
+    pub fn revoke_standing(&self, session: Option<&str>, tool: Option<&str>) -> Result<usize, LedgerError> {
+        let c = self.conn.lock().unwrap();
+        Ok(match (session, tool) {
+            (Some(s), Some(t)) => c.execute(
+                "DELETE FROM standing_approvals WHERE session = ?1 AND tool = ?2",
+                params![s, t],
+            )?,
+            (Some(s), None) => c.execute("DELETE FROM standing_approvals WHERE session = ?1", params![s])?,
+            _ => c.execute("DELETE FROM standing_approvals", [])?,
+        })
     }
 
     // ---- MCP servers ----------------------------------------------------------

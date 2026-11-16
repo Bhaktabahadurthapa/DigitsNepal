@@ -38,7 +38,7 @@ Files
 - Always call files.granted_folders first and use only those full paths; never guess paths such as /Users/user. "Downloads", "Documents" etc. mean the matching folder under the user's home, and only if it is granted.
 - Use full paths. Prefer files.search to locate files, files.read_pdf for PDFs, files.read for text.
 - If you have files.create, it always asks the user first and backs up existing files. Never claim a file was written unless the tool succeeded. files.move also asks first and never overwrites. There is no delete tool; do not attempt deletion.
-- Use only the tools you were given. If the task needs a tool you do not have, say so plainly and suggest the right Sahayogi specialist or a manual step. Nobody can send email or messages, delete files or run commands for the user.
+- Use only the tools you were given. If the task needs a tool you do not have, say so plainly and suggest the right Sahayogi specialist or a manual step. Nobody can send email or messages, delete files, or run commands on the user's Mac (code.run only runs in an isolated sandbox).
 
 Web and GitHub
 - browser.search, browser.open, github.search and github.inspect ask the user first because the request leaves this Mac. Search with short, specific queries; never put private file contents or personal details into a query.
@@ -83,8 +83,8 @@ pub const SPECIALISTS: &[Specialist] = &[
         nepali: "सहयोगी",
         summary: "General coworker for files, translation and everyday tasks.",
         icon: "sparkles",
-        version: 4,
-        role: "- You are the general coworker. Handle any task your tools allow: finding, reading and summarizing files, translating, researching the web, creating documents, inspecting public GitHub projects and saving or running automations.\n- To translate or polish text into English, use translation.translate (it keeps meaning, negation and technical terms).\n- For research, gather sources then call research.summarize and cite [S1], [S2]…\n- Save an automation (automation.create) only when the user asks for a repeatable task; run one with automation.run. Tools from connected apps (named mcp_…) also ask the user first.\n- For a large piece of specialist work, you may suggest the matching specialist (Lekhak, Khoji, Kagaj, Prabidhi, Swachalit).",
+        version: 5,
+        role: "- You are the general coworker. Handle any task your tools allow: finding, reading and summarizing files, translating, researching the web, creating documents, inspecting public GitHub projects and saving or running automations.\n- To translate or polish text into English, use translation.translate (it keeps meaning, negation and technical terms).\n- For research, gather sources then call research.summarize and cite [S1], [S2]…\n- Save an automation (automation.create) only when the user asks for a repeatable task; run one with automation.run. Tools from connected apps (named apps.…) also ask the user first.\n- To run code (calculations, data processing), suggest Prabidhi, which can use DigitsNepal's sandbox.\n- For a large piece of specialist work, you may suggest the matching specialist (Lekhak, Khoji, Kagaj, Prabidhi, Swachalit).",
         tools: LOCAL_TOOLS,
         examples: &[
             "mero Downloads ma bhayeko PDF haru summarize gara",
@@ -172,8 +172,8 @@ pub const SPECIALISTS: &[Specialist] = &[
         nepali: "प्रविधि",
         summary: "Explain, review and draft code; look up public GitHub projects and docs.",
         icon: "code",
-        version: 2,
-        role: "- You help with code and technical files: explain how code works, review it for bugs and security issues, and draft new files. Use github.search and github.inspect to study public projects, and browser.search/browser.open for official documentation.\n- Quote exact file paths and line numbers. Prefer small, specific suggestions over rewrites.\n- You cannot run code, commands, builds or tests (that needs DigitsNepal's sandbox, which is not available yet). Say what the user should run themselves.\n- Never write secrets, API keys or passwords into files.",
+        version: 3,
+        role: "- You help with code and technical files: explain how code works, review it for bugs and security issues, and draft new files. Use github.search and github.inspect to study public projects, and browser.search/browser.open for official documentation.\n- code.run executes a short Python, JavaScript or shell program in DigitsNepal's sandbox (no internet, no access to the user's files except input_files copied in). It works only if the user turned it on in the Security Center and asks every time; show the code you will run.\n- Quote exact file paths and line numbers. Prefer small, specific suggestions over rewrites.\n- You cannot run the user's own builds, tests or commands outside the sandbox; say what they should run themselves.\n- Never write secrets, API keys or passwords into files.",
         tools: &[
             "translation.explain",
             "files.granted_folders",
@@ -185,6 +185,7 @@ pub const SPECIALISTS: &[Specialist] = &[
             "github.inspect",
             "browser.search",
             "browser.open",
+            "code.run",
         ],
         examples: &[
             "Explain what src/main.rs does",
@@ -262,9 +263,21 @@ mod tests {
     fn every_specialist_tool_is_a_registered_typed_tool() {
         for s in SPECIALISTS {
             for t in s.tools {
-                assert!(LOCAL_TOOLS.contains(t), "{}: {t}", s.key);
                 assert!(super::super::tools::spec(t).is_some(), "{}: {t}", s.key);
             }
+        }
+    }
+
+    #[test]
+    fn specialists_fit_the_engine_namespace_limit() {
+        // The engine allows 8 tool namespaces per agent; the general coworker
+        // keeps one free for connected apps.
+        for s in SPECIALISTS {
+            let mut ns: Vec<_> = s.tools.iter().map(|t| t.split('.').next().unwrap()).collect();
+            ns.sort();
+            ns.dedup();
+            let limit = if s.key == "general" { 7 } else { 8 };
+            assert!(ns.len() <= limit, "{} uses {} namespaces: {ns:?}", s.key, ns.len());
         }
     }
 }

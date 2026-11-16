@@ -214,6 +214,20 @@ pub fn specs() -> Vec<ToolSpec> {
             cancellable: true,
         },
         ToolSpec {
+            name: "code.run",
+            description: "Run a short Python, JavaScript or shell program in DigitsNepal's macOS sandbox: no network, no access to the user's files or apps. input_files from granted folders are copied into ./input (read-only); write results to ./output. Returns stdout, stderr and small output files. Only when the user turned it on in Security Center; asks every time.",
+            risk: Risk::Exec,
+            input_schema: obj(json!({
+                "language": {"type": "string", "enum": ["python", "javascript", "shell"]},
+                "code": {"type": "string", "minLength": 1, "maxLength": 20000},
+                "input_files": {"type": "array", "maxItems": 10, "items": path_prop()},
+                "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 60}
+            }), &["language", "code"]),
+            output_schema: error_out(json!({"type": "object", "properties": {"exit_code": {"type": ["integer", "null"]}, "stdout": {"type": "string"}, "stderr": {"type": "string"}, "output_files": {"type": "array"}}, "required": ["stdout", "stderr"]})),
+            timeout: s(90),
+            cancellable: true,
+        },
+        ToolSpec {
             name: "automation.create",
             description: "Save a reusable automation: a named list of up to 20 tool steps (each {tool, args}). Only DigitsNepal's file, document, translation, research, browser and GitHub tools can be steps. Asks the user first.",
             risk: Risk::WriteLocal,
@@ -280,6 +294,23 @@ pub struct Deps {
     pub backups: PathBuf,
     pub translator: Option<Arc<dyn Translator>>,
     pub web: WebConfig,
+    /// Parent folder for sandbox work folders.
+    pub sandbox_dir: PathBuf,
+}
+
+/// The user's global switches, checked again when a tool actually runs.
+pub fn blocked_by_security(ledger: &Ledger, risk: Risk) -> Option<String> {
+    let s = ledger.security();
+    if s.paused {
+        return Some("Sahayogi is paused in the Security Center.".into());
+    }
+    if s.network_off && risk == Risk::Egress {
+        return Some("Internet tools are turned off in the Security Center.".into());
+    }
+    if risk == Risk::Exec && !s.code_enabled {
+        return Some("Running code is turned off in the Security Center.".into());
+    }
+    None
 }
 
 fn arg<'a>(v: &'a Value, k: &str) -> &'a str {
@@ -362,6 +393,36 @@ pub async fn execute(name: &str, args: Value, deps: &Deps) -> Value {
             },
         },
         "automation.list" => json!({"automations": deps.ledger.automations().unwrap_or_default()}),
+        "code.run" => {
+            let mut inputs = Vec::new();
+            for p in args["input_files"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+            {
+                match files::resolve_in_roots(p, &roots, true) {
+                    Ok(real) if files::is_protected(&real) => {
+                        return json!({"error": "That file usually contains passwords or keys."})
+                    }
+                    Ok(real) if real.is_file() => inputs.push(real),
+                    Ok(_) => return json!({"error": format!("{p} is not a file.")}),
+                    Err(e) => return json!({"error": e.to_string()}),
+                }
+            }
+            if arg(&args, "code").chars().count() > 20_000 {
+                return json!({"error": "Code is limited to 20,000 characters."});
+            }
+            let secs = args["timeout_seconds"].as_u64().unwrap_or(30).clamp(1, 60);
+            super::sandbox::run(super::sandbox::Run {
+                language: arg(&args, "language"),
+                code: arg(&args, "code"),
+                inputs,
+                timeout: Duration::from_secs(secs),
+                base: &deps.sandbox_dir,
+            })
+            .await
+        }
         "automation.run" => Box::pin(run_automation(arg(&args, "name"), deps)).await,
         other => json!({"error": format!("Unknown tool {other}")}),
     }
@@ -425,10 +486,12 @@ async fn run_automation(name: &str, deps: &Deps) -> Value {
     for (i, (tool, args)) in steps.iter().enumerate() {
         let roots = deps.ledger.granted_roots();
         // Re-check every step now: grants may have changed since approval.
+        let security = deps.ledger.security();
         let cx = policy::Context {
             roots: &roots,
             hints: &hints,
             automation: &none,
+            security: &security,
         };
         if let policy::Decision::Deny { reason } = policy::evaluate(tool, args, &cx) {
             results.push(json!({"step": i + 1, "tool": tool, "error": reason}));
@@ -479,6 +542,9 @@ pub async fn run_guarded(
     let Some(spec) = spec(name) else {
         return json!({"error": format!("Unknown tool {name}")});
     };
+    if let Some(why) = blocked_by_security(&deps.ledger, spec.risk) {
+        return json!({"error": why});
+    }
     let digest_args = args.clone();
     let fut = execute(name, args, deps);
     guard(
@@ -541,8 +607,15 @@ mod tests {
             assert!(s.timeout >= Duration::from_secs(1) && s.timeout <= Duration::from_secs(120));
             assert!(!s.description.is_empty());
         }
-        // No arbitrary command execution and no delete tool ship.
-        assert!(all.iter().all(|s| s.risk != Risk::Exec && s.risk != Risk::External));
+        // The only command tool is the sandboxed code runner; no external or delete tools.
+        assert!(all.iter().all(|s| s.risk != Risk::External));
+        assert_eq!(
+            all.iter()
+                .filter(|s| s.risk == Risk::Exec)
+                .map(|s| s.name)
+                .collect::<Vec<_>>(),
+            vec!["code.run"]
+        );
         assert!(all
             .iter()
             .all(|s| !s.name.contains("delete") && !s.name.contains("shell")));
@@ -574,6 +647,7 @@ mod tests {
             backups: std::env::temp_dir(),
             translator: Some(Arc::new(Slow)),
             web: WebConfig::default(),
+            sandbox_dir: std::env::temp_dir(),
         };
         let token = tokio_util::sync::CancellationToken::new();
         let t2 = token.clone();
@@ -601,6 +675,7 @@ mod tests {
             backups: std::env::temp_dir(),
             translator: Some(Arc::new(Echo)),
             web: WebConfig::default(),
+            sandbox_dir: std::env::temp_dir(),
         };
         let out = execute(
             "translation.translate",

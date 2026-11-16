@@ -18,6 +18,7 @@ pub mod policy;
 pub mod providers;
 #[cfg(feature = "coworker")]
 pub mod relay;
+pub mod sandbox;
 #[cfg(feature = "coworker")]
 pub mod service;
 pub mod specialists;

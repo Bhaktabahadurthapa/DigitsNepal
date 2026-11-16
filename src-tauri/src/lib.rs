@@ -393,6 +393,11 @@ pub fn run() {
             #[cfg(feature = "coworker")]
             commands::coworker::coworker_pending,
             commands::coworker::coworker_specialists,
+            commands::coworker::coworker_security,
+            commands::coworker::coworker_set_security,
+            commands::coworker::coworker_standing,
+            commands::coworker::coworker_revoke_standing,
+            commands::coworker::coworker_stop_all,
             commands::coworker::coworker_mcp_servers,
             commands::coworker::coworker_mcp_add,
             commands::coworker::coworker_mcp_enable,

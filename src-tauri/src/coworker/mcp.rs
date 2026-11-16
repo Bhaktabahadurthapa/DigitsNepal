@@ -11,9 +11,27 @@ use std::time::Duration;
 
 const PROTOCOL: &str = "2025-06-18";
 
-/// Engine namespace for a server: `mcp_<name>`.
-pub fn namespace(server: &str) -> String {
-    format!("mcp_{server}")
+/// All connected-app tools share one engine namespace (`apps`), because an
+/// agent may use at most 8 tool namespaces. Server names contain no `_`, so
+/// `apps.<server>_<tool>` splits unambiguously.
+pub const NAMESPACE: &str = "apps";
+
+pub fn short_name(server: &str, tool: &str) -> String {
+    format!("{server}_{tool}")
+}
+
+pub fn qualified(server: &str, tool: &str) -> String {
+    format!("{NAMESPACE}.{}", short_name(server, tool))
+}
+
+/// The connected app a qualified tool name belongs to.
+pub fn app_of(qualified: &str) -> Option<&str> {
+    qualified.strip_prefix("apps.")?.split('_').next()
+}
+
+/// Server names: lowercase letters and digits.
+pub fn valid_server_name(s: &str) -> bool {
+    valid_name(s, 20) && !s.contains('_')
 }
 
 /// Server and tool names must be short identifiers.
@@ -202,6 +220,9 @@ mod tests {
     #[test]
     fn names_and_urls_are_checked() {
         assert!(valid_name("notion", 20));
+        assert!(valid_server_name("notion2") && !valid_server_name("my_app"));
+        assert_eq!(qualified("notion", "find_page"), "apps.notion_find_page");
+        assert_eq!(app_of("apps.notion_find_page"), Some("notion"));
         for bad in ["", "Notion", "1abc", "a-b", "a.b", "aaaaaaaaaaaaaaaaaaaaa"] {
             assert!(!valid_name(bad, 20), "{bad}");
         }

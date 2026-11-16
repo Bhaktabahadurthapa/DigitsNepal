@@ -117,8 +117,57 @@ stricter: "read-only" tools ask (and may be allowed for the chat),
 "destructive" tools are hard-floor, everything else asks every time, and
 names like `send_email` stay hard-floor whatever the server claims. Changing
 connected apps restarts the engine, so it is refused while a chat is running.
-Not yet supported: servers that need a login token, and local MCP programs
-(they would run code outside a sandbox).
+Not yet supported: servers that need a login token, and local MCP programs.
+
+## Security Center and sandbox (Phase 6)
+
+**Switches** (Assistant → Security; only the user can change them, and every
+change is logged):
+
+| Switch | Default | Effect |
+|---|---|---|
+| Pause Sahayogi | off | Every tool call is refused, including reads |
+| Allow internet tools | on | Off refuses web, GitHub and connected-app tools |
+| Run code in the sandbox | **off** | Lets `code.run` be used; it still asks every time |
+
+The switches are enforced twice: by the policy when a call is proposed, and
+again by the tool runner when it executes, so a call approved before a switch
+changed still cannot run. **Stop all chats** cancels every running chat and
+declines everything waiting.
+
+**Approvals.** Approvals waiting in any chat are listed in one place and can
+be answered there (or, after a restart, by reopening the chat). "Allow for
+this chat" is now kept by DigitsNepal rather than the engine: every later
+call still goes through the policy, the permission is listed in the Security
+Center, and revoking it takes effect on the very next call.
+
+**`code.run` sandbox.** Code runs under macOS Seatbelt (`sandbox-exec`) with
+a deny-by-default profile, in a fresh folder that is deleted afterwards:
+
+- no network (including DNS) and no system services (no Mach lookups), so it
+  cannot open apps, read the clipboard or send Apple events;
+- reads only system libraries, the interpreter's own install folder and its
+  work folder; writes only its work folder — your home folder, keychains,
+  Documents and Desktop are unreadable;
+- only the interpreter and `/bin`, `/usr/bin` tools can be executed;
+- empty environment; CPU 60 s, 50 MB file size and 256 open-file limits; a
+  wall-clock timeout (≤ 60 s) kills the whole process group;
+- input files from granted folders are copied in read-only; the originals are
+  never visible to the code; output is capped at 64 KB per stream.
+
+Only Prabidhi (technical) has `code.run`; automations cannot include it; the
+approval card shows the complete code (limited to 20,000 characters).
+Tested: reading `~/Documents` and `~/.zshrc`, writing outside the folder,
+network, clipboard and opening an app all fail; runaway code and background
+children are killed; Python with a copied CSV works.
+
+Limits: `sandbox-exec` is deprecated by Apple but still shipped and used by
+macOS itself; if a future macOS removes it, `code.run` turns itself off.
+Memory use is not capped (macOS ignores `RLIMIT_AS`); the timeout bounds it.
+
+**Engine limit.** An agent may use at most 8 tool namespaces, so all
+connected-app tools share one namespace: `apps.<app>_<tool>` (app names are
+lowercase letters and digits only).
 
 ## What runs automatically, what asks, what is refused
 

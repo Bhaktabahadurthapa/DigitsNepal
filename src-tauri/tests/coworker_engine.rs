@@ -920,7 +920,7 @@ async fn a_connected_mcp_app_only_exposes_enabled_tools_and_asks_first() {
         if r.is_empty() {
             s2.lock().unwrap().0 = offered(req);
             Reply::Tool {
-                name_suffix: "mcp_demo__lookup",
+                name_suffix: "apps__demo_lookup",
                 args: json!({"q": "capital of Nepal"}),
             }
         } else {
@@ -936,7 +936,7 @@ async fn a_connected_mcp_app_only_exposes_enabled_tools_and_asks_first() {
     let s = r.cw.new_session(&r.spec).await.unwrap();
     r.cw.send(&s.id, "capital of Nepal?", &r.spec).await.unwrap();
     let ask = wait_for(&r.events, |v| v["type"] == "approval_required").await;
-    assert_eq!(ask["tool"], "mcp_demo.lookup");
+    assert_eq!(ask["tool"], "apps.demo_lookup");
     assert_eq!(ask["standing_ok"], true);
     assert!(r.cw.decide(ask["id"].as_str().unwrap(), UserDecision::Once));
     wait_for(&r.events, |v| v["type"] == "done").await;
@@ -947,5 +947,148 @@ async fn a_connected_mcp_app_only_exposes_enabled_tools_and_asks_first() {
     );
     assert!(result.contains("Kathmandu"), "{result}");
     assert!(r.cw.add_mcp_server("Bad Name", "https://x.org/mcp").await.is_err());
+    assert!(r.cw.add_mcp_server("my_app", "https://x.org/mcp").await.is_err());
+    r.cw.shutdown().await;
+}
+
+fn last_is_user(req: &Value) -> bool {
+    req["messages"]
+        .as_array()
+        .and_then(|m| m.last())
+        .is_some_and(|m| m["role"] == "user")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn allow_for_this_chat_is_revocable_and_takes_effect_immediately() {
+    let target = Arc::new(Mutex::new(String::new()));
+    let t2 = target.clone();
+    let script: Script = Arc::new(move |req| {
+        if last_is_user(req) {
+            let n = tool_results(req).len();
+            Reply::Tool {
+                name_suffix: "files__create",
+                args: json!({"path": format!("{}/note{n}.md", t2.lock().unwrap()), "content": "x"}),
+            }
+        } else {
+            Reply::Text("ok".into())
+        }
+    });
+    let Some(r) = rig(script, None).await else { return };
+    *target.lock().unwrap() = r.granted.display().to_string();
+    let s = r.cw.new_session(&r.spec).await.unwrap();
+    let asks = |r: &Rig| {
+        r.events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|v| v["type"] == "approval_required")
+            .count()
+    };
+    let dones = |r: &Rig| r.events.lock().unwrap().iter().filter(|v| v["type"] == "done").count();
+
+    r.cw.send(&s.id, "write note", &r.spec).await.unwrap();
+    let ask = wait_for(&r.events, |v| v["type"] == "approval_required").await;
+    assert!(r.cw.decide(ask["id"].as_str().unwrap(), UserDecision::Session));
+    wait_for(&r.events, |v| v["type"] == "done").await;
+    assert!(r.cw.ledger.has_standing(&s.id, "files.create"));
+
+    // Second turn: allowed for this chat, so no new approval.
+    r.cw.send(&s.id, "another", &r.spec).await.unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    while dones(&r) < 2 {
+        assert!(std::time::Instant::now() < deadline, "second turn timed out");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(asks(&r), 1);
+    assert!(r.granted.join("note1.md").exists());
+
+    // Revoked in the Security Center: the very next call asks again.
+    r.cw.ledger.revoke_standing(Some(&s.id), Some("files.create")).unwrap();
+    r.cw.send(&s.id, "third", &r.spec).await.unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    while asks(&r) < 2 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "revoked approval did not ask again"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    r.cw.cancel(&s.id).await;
+    r.cw.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sandboxed_code_is_off_by_default_and_asks_every_time_when_on() {
+    if !digitsnepal_lib::coworker::sandbox::available() {
+        return;
+    }
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let s2 = seen.clone();
+    let script: Script = Arc::new(move |req| {
+        if last_is_user(req) {
+            Reply::Tool {
+                name_suffix: "code__run",
+                args: json!({"language": "shell", "code": format!("echo $((6*7)); ls '{}' >/dev/null 2>&1 && echo SAW_HOME", std::env::var("HOME").unwrap())}),
+            }
+        } else {
+            s2.lock()
+                .unwrap()
+                .push(tool_results(req).last().cloned().unwrap_or_default());
+            Reply::Text("done".into())
+        }
+    });
+    let Some(r) = rig(script, None).await else { return };
+    let s = r.cw.new_session_as(&r.spec, "technical").await.unwrap();
+    r.cw.send(&s.id, "compute", &r.spec).await.unwrap();
+    let denied = wait_for(&r.events, |v| v["type"] == "denied").await;
+    assert_eq!(denied["tool"], "code.run");
+    wait_for(&r.events, |v| v["type"] == "done").await;
+
+    r.cw.ledger
+        .set_security(&digitsnepal_lib::coworker::ledger::Security {
+            code_enabled: true,
+            ..Default::default()
+        })
+        .unwrap();
+    r.events.lock().unwrap().clear();
+    r.cw.send(&s.id, "compute again", &r.spec).await.unwrap();
+    let ask = wait_for(&r.events, |v| v["type"] == "approval_required").await;
+    assert_eq!(ask["tool"], "code.run");
+    assert_eq!(ask["standing_ok"], false, "code never gets a per-chat approval");
+    assert!(r.cw.decide(ask["id"].as_str().unwrap(), UserDecision::Once));
+    wait_for(&r.events, |v| v["type"] == "done").await;
+    let out = seen.lock().unwrap().last().cloned().unwrap();
+    assert!(out.contains("42"), "{out}");
+    assert!(!out.contains("SAW_HOME"), "sandbox let code see the home folder: {out}");
+    r.cw.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pausing_sahayogi_blocks_even_safe_reads() {
+    let target = Arc::new(Mutex::new(String::new()));
+    let t2 = target.clone();
+    let script: Script = Arc::new(move |req| {
+        if last_is_user(req) {
+            Reply::Tool {
+                name_suffix: "files__read",
+                args: json!({"path": t2.lock().unwrap().clone()}),
+            }
+        } else {
+            Reply::Text("paused".into())
+        }
+    });
+    let Some(r) = rig(script, None).await else { return };
+    *target.lock().unwrap() = r.granted.join("minutes.txt").display().to_string();
+    r.cw.ledger
+        .set_security(&digitsnepal_lib::coworker::ledger::Security {
+            paused: true,
+            ..Default::default()
+        })
+        .unwrap();
+    let s = r.cw.new_session(&r.spec).await.unwrap();
+    r.cw.send(&s.id, "read", &r.spec).await.unwrap();
+    let d = wait_for(&r.events, |v| v["type"] == "denied").await;
+    assert!(d["reason"].as_str().unwrap().contains("paused"));
+    wait_for(&r.events, |v| v["type"] == "done").await;
     r.cw.shutdown().await;
 }

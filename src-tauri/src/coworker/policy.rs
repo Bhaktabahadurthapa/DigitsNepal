@@ -44,6 +44,8 @@ pub struct Context<'a> {
     pub hints: &'a HashMap<String, ToolHints>,
     /// Looks up a saved automation's steps by name.
     pub automation: &'a AutomationLookup,
+    /// The user's global switches from the Security Center.
+    pub security: &'a super::ledger::Security,
 }
 
 /// Words that mark irreversible or outward-facing actions. Such calls always
@@ -69,6 +71,16 @@ const HARD_FLOOR_WORDS: &[&str] = &[
 pub fn evaluate(tool: &str, args: &Value, cx: &Context) -> Decision {
     let name = tool.to_ascii_lowercase();
     let short = name.rsplit('.').next().unwrap_or(&name);
+
+    if cx.security.paused {
+        return deny("Sahayogi is paused. Resume it in the Security Center.");
+    }
+    let networked = cx.hints.contains_key(tool)
+        || super::tools::spec(tool).is_some_and(|s| s.risk == Risk::Egress)
+        || name.starts_with("apps.");
+    if cx.security.network_off && networked {
+        return deny("Internet tools are turned off in the Security Center.");
+    }
 
     match super::tools::canonical(tool) {
         "automation.create" => {
@@ -180,8 +192,36 @@ pub fn evaluate(tool: &str, args: &Value, cx: &Context) -> Decision {
                 standing_ok: true,
                 hard_floor: false,
             },
-            // Command tools require the OS sandbox, which does not ship yet.
-            Risk::Exec => deny("Running commands needs DigitsNepal's sandbox, which is not available yet."),
+            // Code runs only in the macOS sandbox, only when the user turned
+            // it on, and every run is approved.
+            Risk::Exec => {
+                if !super::sandbox::available() {
+                    return deny("The macOS sandbox is not available on this Mac, so code cannot run.");
+                }
+                if !cx.security.code_enabled {
+                    return deny(
+                        "Running code is off. The user can turn on \"Run code in the sandbox\" in the Security Center.",
+                    );
+                }
+                for p in &paths {
+                    match resolve_in_roots(p, cx.roots, true) {
+                        Ok(real) if is_protected(&real) => {
+                            return deny("That file usually contains passwords or keys.")
+                        }
+                        Ok(_) => {}
+                        Err(e) => return deny(&e.to_string()),
+                    }
+                }
+                Decision::Ask {
+                    reason: format!(
+                        "Runs {} code in DigitsNepal's sandbox: no internet, no access to your files or apps{}. Read the code before allowing it.",
+                        args["language"].as_str().unwrap_or(""),
+                        if paths.is_empty() { String::new() } else { format!("; {} input file(s) are copied in read-only", paths.len()) }
+                    ),
+                    standing_ok: false,
+                    hard_floor: false,
+                }
+            }
             Risk::External => Decision::Ask {
                 reason: "This affects people or systems outside your Mac. It always needs your approval.".into(),
                 standing_ok: false,
@@ -200,7 +240,7 @@ pub fn evaluate(tool: &str, args: &Value, cx: &Context) -> Decision {
     // Tools from connected MCP apps: the server's annotations are hints only,
     // so they can make a call ask *more*, never run without asking.
     if let Some(h) = cx.hints.get(tool) {
-        let app = tool.split('.').next().unwrap_or("").trim_start_matches("mcp_");
+        let app = super::mcp::app_of(tool).unwrap_or("connected app");
         return if h.destructive {
             Decision::Ask {
                 reason: format!(
@@ -248,6 +288,11 @@ fn file_paths(args: &Value) -> Vec<String> {
             out.push(p.to_string());
         }
     }
+    for p in args.get("input_files").and_then(Value::as_array).into_iter().flatten() {
+        if let Some(p) = p.as_str() {
+            out.push(p.to_string());
+        }
+    }
     out
 }
 
@@ -284,6 +329,7 @@ mod tests {
                 roots,
                 hints,
                 automation: &|_| None,
+                security: &crate::coworker::ledger::Security::default(),
             },
         )
     }
@@ -465,10 +511,12 @@ mod tests {
             "outside" => Some(outside.clone()),
             _ => None,
         };
+        let sec = crate::coworker::ledger::Security::default();
         let cx = Context {
             roots: &roots,
             hints: &h,
             automation: &lookup,
+            security: &sec,
         };
         assert!(matches!(
             evaluate("automation.run", &json!({"name": "read"}), &cx),
@@ -585,28 +633,28 @@ mod tests {
     fn mcp_hints_can_only_make_calls_stricter() {
         let mut h = HashMap::new();
         h.insert(
-            "mcp_notes.find".to_string(),
+            "apps.notes_find".to_string(),
             ToolHints {
                 read_only: true,
                 destructive: false,
             },
         );
         h.insert(
-            "mcp_notes.clear".to_string(),
+            "apps.notes_clear".to_string(),
             ToolHints {
                 read_only: false,
                 destructive: true,
             },
         );
         h.insert(
-            "mcp_notes.tag".to_string(),
+            "apps.notes_tag".to_string(),
             ToolHints {
                 read_only: false,
                 destructive: false,
             },
         );
         assert!(matches!(
-            run("mcp_notes.find", json!({}), &[], &h),
+            run("apps.notes_find", json!({}), &[], &h),
             Decision::Ask {
                 standing_ok: true,
                 hard_floor: false,
@@ -614,11 +662,11 @@ mod tests {
             }
         ));
         assert!(matches!(
-            run("mcp_notes.clear", json!({}), &[], &h),
+            run("apps.notes_clear", json!({}), &[], &h),
             Decision::Ask { hard_floor: true, .. }
         ));
         assert!(matches!(
-            run("mcp_notes.tag", json!({}), &[], &h),
+            run("apps.notes_tag", json!({}), &[], &h),
             Decision::Ask {
                 standing_ok: false,
                 hard_floor: false,
@@ -627,15 +675,87 @@ mod tests {
         ));
         // A "read-only" claim does not soften a hard-floor action name.
         h.insert(
-            "mcp_mail.send_email".to_string(),
+            "apps.mail_send_email".to_string(),
             ToolHints {
                 read_only: true,
                 destructive: false,
             },
         );
         assert!(matches!(
-            run("mcp_mail.send_email", json!({}), &[], &h),
+            run("apps.mail_send_email", json!({}), &[], &h),
             Decision::Ask { hard_floor: true, .. }
         ));
+    }
+
+    #[test]
+    fn security_switches_override_everything() {
+        let d = tempfile::tempdir().unwrap();
+        let g = d.path().canonicalize().unwrap();
+        std::fs::write(g.join("a.txt"), "x").unwrap();
+        let roots = vec![g.clone()];
+        let mut h = HashMap::new();
+        h.insert(
+            "apps.x_find".to_string(),
+            ToolHints {
+                read_only: true,
+                destructive: false,
+            },
+        );
+        let eval = |t: &str, a: Value, sec: crate::coworker::ledger::Security| {
+            evaluate(
+                t,
+                &a,
+                &Context {
+                    roots: &roots,
+                    hints: &h,
+                    automation: &|_| None,
+                    security: &sec,
+                },
+            )
+        };
+        let read = json!({"path": g.join("a.txt")});
+        let paused = crate::coworker::ledger::Security {
+            paused: true,
+            ..Default::default()
+        };
+        assert!(matches!(
+            eval("files.read", read.clone(), paused),
+            Decision::Deny { .. }
+        ));
+        let offline = crate::coworker::ledger::Security {
+            network_off: true,
+            ..Default::default()
+        };
+        assert!(matches!(eval("files.read", read, offline), Decision::Allow { .. }));
+        for t in ["browser.open", "github.search", "apps.x_find", "apps.y_other"] {
+            assert!(
+                matches!(eval(t, json!({"url": "https://x.org"}), offline), Decision::Deny { .. }),
+                "{t}"
+            );
+        }
+        // Code: off by default; when on it always asks, never per chat.
+        let code = json!({"language": "python", "code": "print(1)"});
+        assert!(matches!(
+            eval("code.run", code.clone(), Default::default()),
+            Decision::Deny { .. }
+        ));
+        let on = crate::coworker::ledger::Security {
+            code_enabled: true,
+            ..Default::default()
+        };
+        if crate::coworker::sandbox::available() {
+            assert!(matches!(
+                eval("code.run", code, on),
+                Decision::Ask { standing_ok: false, .. }
+            ));
+            assert!(matches!(
+                eval(
+                    "code.run",
+                    json!({"language": "shell", "code": "x", "input_files": ["/etc/hosts"]}),
+                    on
+                ),
+                Decision::Deny { .. }
+            ));
+        }
     }
 }

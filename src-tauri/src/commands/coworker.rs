@@ -290,9 +290,107 @@ pub fn coworker_specialists() -> Vec<crate::coworker::specialists::Specialist> {
     crate::coworker::specialists::SPECIALISTS.to_vec()
 }
 
+#[derive(Serialize)]
+pub struct PendingItem {
+    #[serde(flatten)]
+    pub row: PendingRow,
+    /// Answerable now; otherwise the chat must be reopened first.
+    pub live: bool,
+}
+
 #[tauri::command]
-pub fn coworker_pending(cw: State<CoworkerState>) -> Vec<PendingRow> {
+pub fn coworker_pending(cw: State<CoworkerState>) -> Vec<PendingItem> {
     cw.0.pending()
+        .into_iter()
+        .map(|row| PendingItem {
+            live: cw.0.is_live(&row.id),
+            row,
+        })
+        .collect()
+}
+
+// ---- Security Center ---------------------------------------------------------
+
+#[derive(Serialize)]
+pub struct SecurityStatus {
+    #[serde(flatten)]
+    pub switches: crate::coworker::ledger::Security,
+    pub sandbox_available: bool,
+    pub python: Option<String>,
+    pub javascript: Option<String>,
+}
+
+#[tauri::command]
+pub fn coworker_security(cw: State<CoworkerState>) -> SecurityStatus {
+    use crate::coworker::sandbox;
+    let path = |l: &str| sandbox::interpreter(l).map(|p| p.display().to_string());
+    SecurityStatus {
+        switches: cw.0.ledger.security(),
+        sandbox_available: sandbox::available(),
+        python: path("python"),
+        javascript: path("javascript"),
+    }
+}
+
+/// Only the user changes these, from the Security Center.
+#[tauri::command]
+pub fn coworker_set_security(switches: crate::coworker::ledger::Security, cw: State<CoworkerState>) -> CmdResult<()> {
+    let before = cw.0.ledger.security();
+    cw.0.ledger.set_security(&switches).map_err(le)?;
+    for (name, old, new) in [
+        ("paused", before.paused, switches.paused),
+        ("network_off", before.network_off, switches.network_off),
+        ("code_enabled", before.code_enabled, switches.code_enabled),
+    ] {
+        if old != new {
+            cw.0.ledger
+                .record(
+                    "",
+                    "user",
+                    "security",
+                    name,
+                    &serde_json::Value::Null,
+                    if new { "on" } else { "off" },
+                    "",
+                )
+                .map_err(le)?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn coworker_standing(cw: State<CoworkerState>) -> Vec<crate::coworker::ledger::StandingRow> {
+    cw.0.ledger.standing()
+}
+
+#[tauri::command]
+pub fn coworker_revoke_standing(
+    session: Option<String>,
+    tool: Option<String>,
+    cw: State<CoworkerState>,
+) -> CmdResult<usize> {
+    let n =
+        cw.0.ledger
+            .revoke_standing(session.as_deref(), tool.as_deref())
+            .map_err(le)?;
+    cw.0.ledger
+        .record(
+            session.as_deref().unwrap_or(""),
+            "user",
+            "standing_approval",
+            tool.as_deref().unwrap_or("*"),
+            &serde_json::Value::Null,
+            "revoked",
+            &format!("{n} removed"),
+        )
+        .map_err(le)?;
+    Ok(n)
+}
+
+#[tauri::command]
+pub async fn coworker_stop_all(cw: State<'_, CoworkerState>) -> CmdResult<usize> {
+    Ok(cw.0.stop_all().await)
 }
 
 /// Re-show approvals left waiting by an earlier launch and continue the turn.
