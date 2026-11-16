@@ -1,44 +1,61 @@
 @import "tailwindcss";
 
-/* Native-macOS-utility tokens. Light by default, dark via system setting. */
+/* DigitsNepal design tokens: midnight navy, electric blue, purple accent,
+   white workspace. Light by default, dark via the system setting. */
 :root {
-  --bg-solid: #f5f5f4;
+  --bg-solid: #f5f7fb;
   --surface-solid: #ffffff;
-  --surface-2-solid: #fafaf9;
-  --sidebar-solid: #ecebe8;
-  --border: #e2e0dc;
-  --text: #1c1b1a;
-  --muted: #6b6862;
-  --accent: #003893;       /* Nepal-flag blue */
-  --accent-soft: #e6edf8;
-  --crimson: #b3122f;      /* Nepal-flag crimson, for emphasis only */
-  --warn-bg: #fff6e0;
-  --warn-text: #7a4b00;
+  --surface-2-solid: #f1f4f9;
+  --sidebar-solid: #0b1020;
+  --border: #e2e8f0;
+  --text: #0f172a;
+  --muted: #475569;
+  --accent: #2563eb;        /* electric blue (fills) */
+  --accent-fg: #1d4ed8;     /* blue for text and links */
+  --accent-soft: #eaf1ff;
+  --brand-2: #7c3aed;       /* purple */
+  --crimson: #b3122f;       /* Nepal-flag crimson, for emphasis only */
+  --warn-bg: #fff7e6;
+  --warn-text: #8a4b00;
   --error-bg: #fdecec;
-  --error-text: #8a1c1c;
-  --ok: #1f7a3d;
-  --focus: #2f6fdb;
+  --error-text: #9b1c1c;
+  --ok: #15803d;
+  --ok-bg: #e9f8ef;
+  --focus: #2563eb;
+  --side-text: #e6eaf5;
+  --side-muted: #8b96b5;
+  --side-hover: #141b33;
+  --side-active: #1c2650;
+  --shadow: 0 1px 2px rgb(15 23 42 / 0.06), 0 1px 3px rgb(15 23 42 / 0.06);
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg-solid: #1b1b1d;
-    --surface-solid: #242426;
-    --surface-2-solid: #2a2a2d;
-    --sidebar-solid: #202022;
-    --border: #38383c;
-    --text: #ececec;
-    --muted: #a1a1a6;
-    --accent: #7ea6ff;
-    --accent-soft: #23304d;
+    --bg-solid: #0b1020;
+    --surface-solid: #111831;
+    --surface-2-solid: #18213f;
+    --sidebar-solid: #070b16;
+    --border: #253055;
+    --text: #e6eaf5;
+    --muted: #9aa6c4;
+    --accent: #2563eb;
+    --accent-fg: #8fb2ff;
+    --accent-soft: #1a2654;
+    --brand-2: #8b5cf6;
     --crimson: #ff7a8a;
     --warn-bg: #3a2f17;
     --warn-text: #f3cf86;
     --error-bg: #3c1f22;
     --error-text: #ffb4b4;
     --ok: #6fd08f;
-    --focus: #7ea6ff;
+    --ok-bg: #12301f;
+    --focus: #8fb2ff;
+    --side-text: #e6eaf5;
+    --side-muted: #7f8aa8;
+    --side-hover: #10172d;
+    --side-active: #1a2450;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
     color-scheme: dark;
   }
 }
@@ -61,14 +78,22 @@
   --color-ink: var(--text);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
   --color-accent-soft: var(--accent-soft);
+  --color-brand-2: var(--brand-2);
+  --color-ok-bg: var(--ok-bg);
+  --color-side-text: var(--side-text);
+  --color-side-muted: var(--side-muted);
+  --color-side-hover: var(--side-hover);
+  --color-side-active: var(--side-active);
+  --shadow-card: var(--shadow);
   --color-crimson: var(--crimson);
   --color-warn-bg: var(--warn-bg);
   --color-warn-text: var(--warn-text);
   --color-error-bg: var(--error-bg);
   --color-error-text: var(--error-text);
   --color-ok: var(--ok);
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Kohinoor Devanagari", "Helvetica Neue", sans-serif;
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Kohinoor Devanagari", "Helvetica Neue", sans-serif;
   --font-deva: "Kohinoor Devanagari", "Devanagari Sangam MN", -apple-system, sans-serif;
 }
 
@@ -88,6 +113,7 @@ body {
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 13px;
+  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
   user-select: none;
   -webkit-user-select: none;
@@ -120,4 +146,24 @@ input,
 /* Keep text legible over whatever is behind a translucent window. */
 :root.glass body {
   text-shadow: 0 0 6px var(--bg-solid);
+}
+
+/* Sahayogi brand gradient (blue → purple). */
+.brand-gradient {
+  background-image: linear-gradient(135deg, var(--accent), var(--brand-2));
+}
+
+button:not(:disabled),
+[role="button"],
+label[for],
+summary {
+  cursor: pointer;
+}
+
+@keyframes dn-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.fade-in {
+  animation: dn-fade-in 180ms ease-out;
 }

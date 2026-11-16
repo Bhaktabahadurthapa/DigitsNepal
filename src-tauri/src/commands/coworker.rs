@@ -70,7 +70,7 @@ pub async fn coworker_add_grant(
             let (tx, rx) = tokio::sync::oneshot::channel();
             app.dialog()
                 .file()
-                .set_title("Give DigitsNepal Coworker access to a folder")
+                .set_title("Give Sahayogi access to a folder")
                 .pick_folder(move |p| {
                     let _ = tx.send(p);
                 });

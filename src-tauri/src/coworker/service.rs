@@ -124,7 +124,7 @@ impl Coworker {
             let harness = b
                 .start()
                 .await
-                .map_err(|e| CoworkerError::Setup(format!("The coworker engine could not start: {e}")))?;
+                .map_err(|e| CoworkerError::Setup(format!("Sahayogi could not start: {e}")))?;
             register_local_tools(&harness, self.ledger.clone(), self.cfg.backup_dir.clone()).await?;
             *guard = Some(Engine {
                 harness,
@@ -196,7 +196,7 @@ impl Coworker {
         };
         let (name, instructions, tools): (&str, &str, Vec<String>) = match specialist {
             Specialist::General => (
-                "General Coworker",
+                "Sahayogi",
                 specialists::GENERAL_INSTRUCTIONS,
                 specialists::LOCAL_TOOLS.iter().map(|s| s.to_string()).collect(),
             ),
@@ -696,7 +696,7 @@ async fn register_local_tools(h: &Harness, ledger: Arc<Ledger>, backups: PathBuf
                         Ok(json!({
                             "granted_folders": roots,
                             "home": std::env::var("HOME").unwrap_or_default(),
-                            "note": if roots.is_empty() { "No folders granted yet. Ask the user to add one under Coworker → Folders." } else { "" }
+                            "note": if roots.is_empty() { "No folders granted yet. Ask the user to add one under Sahayogi → Folders." } else { "" }
                         }))
                     }
                 }

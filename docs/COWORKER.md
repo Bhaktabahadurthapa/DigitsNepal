@@ -1,6 +1,6 @@
-# DigitsNepal Coworker (MVP)
+# Sahayogi (सहयोगी): DigitsNepal AI work assistant (preview)
 
-An AI coworker inside the DigitsNepal Mac app. You can ask it for work in
+Sahayogi is the AI work assistant inside the DigitsNepal Mac app. You can ask it for work in
 Romanized Nepali, Devanagari or English, and it works only in folders you
 grant. It can also investigate websites and apps you are authorized to inspect,
 using [REA](https://github.com/morluto/rea).
@@ -8,7 +8,7 @@ using [REA](https://github.com/morluto/rea).
 ## Architecture
 
 ```
-React UI: Coworker · REA Lab · Activity
+React UI: Sahayogi · REA Lab · Activity
         │  Tauri commands + "coworker:event" stream
 Rust  ──┼─ coworker::service ── OpenWorker Harness SDK (embedded, pinned commit, MIT)
         │      every tool call pauses (Approvals::Always) → coworker::policy decides

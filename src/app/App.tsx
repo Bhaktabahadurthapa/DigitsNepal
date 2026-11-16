@@ -1,5 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { Activity, BookOpen, Clock, Keyboard, Languages, ScanSearch, Settings as SettingsIcon, Sparkles, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ActivityPage } from "../features/coworker/ActivityPage";
 import { CoworkerPage } from "../features/coworker/CoworkerPage";
@@ -17,13 +18,27 @@ import type { WordMeaning } from "../types/translation";
 type Tab = "translate" | "coworker" | "rea" | "activity" | "explorer" | "history" | "settings";
 const TABS: { id: Tab; label: string; key: string }[] = [
   { id: "translate", label: "Translate", key: "1" },
-  { id: "coworker", label: "Coworker", key: "2" },
+  { id: "coworker", label: "Sahayogi", key: "2" },
   { id: "rea", label: "REA Lab", key: "3" },
   { id: "activity", label: "Activity", key: "4" },
   { id: "explorer", label: "Word Explorer", key: "5" },
   { id: "history", label: "History", key: "6" },
   { id: "settings", label: "Settings", key: "," },
 ];
+const NAV_GROUPS: { title: string; tabs: Tab[] }[] = [
+  { title: "Language", tabs: ["translate", "explorer", "history"] },
+  { title: "Assistant", tabs: ["coworker", "rea", "activity"] },
+  { title: "App", tabs: ["settings"] },
+];
+const ICONS: Record<Tab, LucideIcon> = {
+  translate: Languages,
+  coworker: Sparkles,
+  rea: ScanSearch,
+  activity: Activity,
+  explorer: BookOpen,
+  history: Clock,
+  settings: SettingsIcon,
+};
 
 export function App() {
   const [tab, setTab] = useState<Tab>("translate");
@@ -87,38 +102,56 @@ export function App() {
 
   return (
     <div className="flex h-full">
-      <nav aria-label="Main" hidden={overlay} className="flex w-48 shrink-0 flex-col border-r border-line bg-sidebar">
-        <div data-tauri-drag-region className="h-12" />
-        <div className="px-4 pb-4">
-          <div className="text-[15px] font-semibold tracking-tight">DigitsNepal</div>
-          <div className="text-[11px] text-muted">Every Nepali Word Has Meaning.</div>
+      <nav aria-label="Main" hidden={overlay} className="flex w-52 shrink-0 flex-col bg-sidebar text-side-text">
+        <div data-tauri-drag-region className="h-11" />
+        <div className="flex items-center gap-2.5 px-4 pb-5">
+          <div className="brand-gradient flex h-8 w-8 items-center justify-center rounded-lg text-[15px] font-semibold text-white shadow-card deva" aria-hidden>अ</div>
+          <div className="min-w-0">
+            <div className="text-[14px] font-semibold tracking-tight">DigitsNepal</div>
+            <div className="truncate text-[10.5px] text-side-muted">Every Nepali Word Has Meaning.</div>
+          </div>
         </div>
-        <ul className="space-y-0.5 px-2">
-          {TABS.map((t) => (
-            <li key={t.id}>
-              <button
-                type="button"
-                aria-current={tab === t.id ? "page" : undefined}
-                onClick={() => setTab(t.id)}
-                className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors ${tab === t.id ? "bg-accent-soft font-medium text-ink" : "text-muted hover:bg-surface-2 hover:text-ink"}`}
-              >
-                {t.label}
-                <span className="text-[10.5px] opacity-60">⌘{t.key}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        {NAV_GROUPS.map((g) => (
+          <div key={g.title} className="mb-4 px-2">
+            <div className="px-2.5 pb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-side-muted">{g.title}</div>
+            <ul className="space-y-0.5">
+              {g.tabs.map((id) => {
+                const t = TABS.find((x) => x.id === id)!;
+                const Icon = ICONS[id];
+                const active = tab === id;
+                return (
+                  <li key={id}>
+                    <button
+                      type="button"
+                      aria-current={active ? "page" : undefined}
+                      onClick={() => setTab(id)}
+                      className={`group flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] transition-colors duration-150 ${active ? "bg-side-active font-medium text-white" : "text-side-text/80 hover:bg-side-hover hover:text-white"}`}
+                    >
+                      <Icon size={16} strokeWidth={1.9} className={active ? (id === "coworker" ? "text-[#a78bfa]" : "text-[#8fb2ff]") : "text-side-muted group-hover:text-side-text"} aria-hidden />
+                      <span className="flex-1">{t.label}</span>
+                      <span className="text-[10.5px] text-side-muted opacity-0 transition-opacity group-hover:opacity-100">⌘{t.key}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
         <div className="flex-1" />
-        <div className="space-y-1 p-4 text-[11px] text-muted">
+        <div className="m-2 rounded-lg bg-side-hover p-3 text-[11px] text-side-muted">
           {settings && (
             <>
-              <div>
-                Shortcut: <span className="font-mono">{settings.shortcut_enabled && !settings.paused ? shortcut : "off"}</span>
+              <div className="flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full ${settings.provider ? "bg-[#4ade80]" : "bg-side-muted"}`} aria-hidden />
+                <span className="truncate">AI: <span className="text-side-text">{settings.provider}</span></span>
               </div>
-              <div>Provider: {settings.provider}</div>
+              <div className="mt-1 flex items-center gap-1.5">
+                <Keyboard size={12} aria-hidden />
+                Shortcut <span className="font-mono text-side-text">{settings.shortcut_enabled && !settings.paused ? shortcut : "off"}</span>
+              </div>
             </>
           )}
-          {!isTauri() && <div className="text-crimson">Browser preview with demo data — not real translations. Run the desktop app for full features.</div>}
+          {!isTauri() && <div className="mt-1 text-[#ff9aa8]">Browser preview with demo data. Run the desktop app for full features.</div>}
         </div>
       </nav>
 
