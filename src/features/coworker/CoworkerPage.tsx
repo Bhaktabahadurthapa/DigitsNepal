@@ -133,12 +133,12 @@ export function CoworkerPage({ onOpenSettings, start }: { onOpenSettings: () => 
   return (
     <div className="flex h-full min-h-0 bg-bg">
       {/* Left panel: new chat, folders, conversations */}
-      <aside className="flex w-64 shrink-0 flex-col gap-4 border-r border-line bg-surface p-3">
+      <aside className="flex w-64 shrink-0 flex-col gap-4 border-r border-line bg-surface-2 p-3">
         <Button variant="primary" className="w-full" onClick={() => void newSession()} disabled={busy}>
           <Plus size={15} aria-hidden /> New chat
         </Button>
 
-        <section aria-labelledby="folders-h" className="rounded-xl border border-line bg-surface-2 p-2.5">
+        <section aria-labelledby="folders-h" className="rounded-xl border border-line bg-surface p-2.5 shadow-card">
           <div className="mb-2 flex items-center justify-between">
             <h2 id="folders-h" className="flex items-center gap-1.5 text-[12px] font-semibold text-ink">
               <ShieldCheck size={14} className="text-ok" aria-hidden /> Folder access
@@ -265,7 +265,7 @@ export function CoworkerPage({ onOpenSettings, start }: { onOpenSettings: () => 
               type="submit"
               aria-label="Send"
               disabled={!input.trim() || t.running}
-              className="brand-gradient flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-card transition-opacity disabled:opacity-35"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent transition-colors hover:bg-accent-hover disabled:bg-surface-2 disabled:text-muted"
             >
               <ArrowUp size={17} strokeWidth={2.4} aria-hidden />
             </button>
@@ -279,7 +279,7 @@ export function CoworkerPage({ onOpenSettings, start }: { onOpenSettings: () => 
 
 function Avatar({ rea = false, size = 32 }: { rea?: boolean; size?: number }) {
   return (
-    <div className="brand-gradient flex shrink-0 items-center justify-center rounded-xl text-white shadow-card" style={{ width: size, height: size }} aria-hidden>
+    <div className="flex shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent-fg" style={{ width: size, height: size }} aria-hidden>
       {rea ? <ScanSearch size={size * 0.5} /> : <Sparkles size={size * 0.5} />}
     </div>
   );
@@ -325,7 +325,7 @@ function ItemView({ item, rea, onDecide, onAnswer }: { item: Item; rea: boolean;
     case "user":
       return (
         <li className="fade-in flex justify-end">
-          <div data-selectable className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-[14px] leading-relaxed text-white shadow-card">{item.text}</div>
+          <div data-selectable className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-[14px] leading-relaxed text-on-accent">{item.text}</div>
         </li>
       );
     case "assistant":
@@ -371,7 +371,7 @@ function ApprovalCard({ item, onDecide }: { item: Extract<Item, { kind: "approva
   const [open, setOpen] = useState(false);
   const path = typeof item.args === "object" && item.args && "path" in item.args ? String((item.args as { path: unknown }).path) : null;
   return (
-    <li className={`fade-in ml-10 overflow-hidden rounded-xl border bg-surface shadow-card ${item.hardFloor ? "border-[#f59e0b]" : "border-accent"}`}>
+    <li className={`fade-in ml-10 overflow-hidden rounded-xl border bg-surface shadow-card ${item.hardFloor ? "border-warn-text/40" : "border-accent"}`}>
       <div className="flex items-start gap-3 p-4">
         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${item.hardFloor ? "bg-warn-bg text-warn-text" : "bg-accent-soft text-accent-fg"}`}>
           {item.hardFloor ? <ShieldAlert size={18} aria-hidden /> : <ShieldCheck size={18} aria-hidden />}

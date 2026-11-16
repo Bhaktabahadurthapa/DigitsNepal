@@ -68,7 +68,7 @@ export function WordExplorer({ initialText, initialMeanings }: { initialText: st
                 onClick={() => setSelected(s.index)}
                 aria-pressed={selected === s.index}
                 className={`rounded px-0.5 underline decoration-dotted underline-offset-4 transition-colors ${
-                  selected === s.index ? "bg-accent text-white dark:text-[#0d1630]" : items[s.index]?.uncertain ? "decoration-crimson hover:bg-warn-bg" : "decoration-accent hover:bg-accent-soft"
+                  selected === s.index ? "bg-accent text-on-accent" : items[s.index]?.uncertain ? "decoration-crimson hover:bg-warn-bg" : "decoration-accent hover:bg-accent-soft"
                 }`}
               >
                 {s.text}

@@ -102,10 +102,10 @@ export function App() {
 
   return (
     <div className="flex h-full">
-      <nav aria-label="Main" hidden={overlay} className="flex w-52 shrink-0 flex-col bg-sidebar text-side-text">
+      <nav aria-label="Main" hidden={overlay} className="flex w-52 shrink-0 flex-col border-r border-line bg-sidebar text-side-text">
         <div data-tauri-drag-region className="h-11" />
         <div className="flex items-center gap-2.5 px-4 pb-5">
-          <div className="brand-gradient flex h-8 w-8 items-center justify-center rounded-lg text-[15px] font-semibold text-white shadow-card deva" aria-hidden>अ</div>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-[15px] font-semibold text-on-accent deva" aria-hidden>अ</div>
           <div className="min-w-0">
             <div className="text-[14px] font-semibold tracking-tight">DigitsNepal</div>
             <div className="truncate text-[10.5px] text-side-muted">Every Nepali Word Has Meaning.</div>
@@ -125,9 +125,9 @@ export function App() {
                       type="button"
                       aria-current={active ? "page" : undefined}
                       onClick={() => setTab(id)}
-                      className={`group flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] transition-colors duration-150 ${active ? "bg-side-active font-medium text-white" : "text-side-text/80 hover:bg-side-hover hover:text-white"}`}
+                      className={`group flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] transition-colors duration-150 ${active ? "bg-side-active font-medium text-side-text" : "text-side-text hover:bg-side-hover"}`}
                     >
-                      <Icon size={16} strokeWidth={1.9} className={active ? (id === "coworker" ? "text-[#a78bfa]" : "text-[#8fb2ff]") : "text-side-muted group-hover:text-side-text"} aria-hidden />
+                      <Icon size={16} strokeWidth={1.9} className={active ? "text-accent" : "text-side-muted"} aria-hidden />
                       <span className="flex-1">{t.label}</span>
                       <span className="text-[10.5px] text-side-muted opacity-0 transition-opacity group-hover:opacity-100">⌘{t.key}</span>
                     </button>
@@ -138,11 +138,11 @@ export function App() {
           </div>
         ))}
         <div className="flex-1" />
-        <div className="m-2 rounded-lg bg-side-hover p-3 text-[11px] text-side-muted">
+        <div className="m-2 rounded-lg border border-line bg-surface p-3 text-[11px] text-side-muted">
           {settings && (
             <>
               <div className="flex items-center gap-1.5">
-                <span className={`h-1.5 w-1.5 rounded-full ${settings.provider ? "bg-[#4ade80]" : "bg-side-muted"}`} aria-hidden />
+                <span className={`h-1.5 w-1.5 rounded-full ${settings.provider ? "bg-ok" : "bg-side-muted"}`} aria-hidden />
                 <span className="truncate">AI: <span className="text-side-text">{settings.provider}</span></span>
               </div>
               <div className="mt-1 flex items-center gap-1.5">
@@ -151,7 +151,7 @@ export function App() {
               </div>
             </>
           )}
-          {!isTauri() && <div className="mt-1 text-[#ff9aa8]">Browser preview with demo data. Run the desktop app for full features.</div>}
+          {!isTauri() && <div className="mt-1 text-error-text">Browser preview with demo data. Run the desktop app for full features.</div>}
         </div>
       </nav>
 

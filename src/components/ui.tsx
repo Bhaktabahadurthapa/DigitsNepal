@@ -7,7 +7,7 @@ type Variant = "primary" | "secondary" | "ghost" | "danger";
 export function Button({ variant = "secondary", className = "", ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
   const base = "inline-flex items-center justify-center gap-1.5 rounded-lg px-3 h-8 text-[12.5px] font-medium transition-colors duration-150 disabled:opacity-45 disabled:cursor-not-allowed";
   const styles: Record<Variant, string> = {
-    primary: "bg-accent text-white shadow-card hover:bg-[#1d4ed8]",
+    primary: "bg-accent text-on-accent shadow-card hover:bg-accent-hover",
     secondary: "bg-surface border border-line text-ink shadow-card hover:bg-surface-2",
     ghost: "text-muted hover:text-ink hover:bg-surface-2",
     danger: "bg-surface border border-line text-error-text hover:bg-error-bg",

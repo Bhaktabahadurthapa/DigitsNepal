@@ -56,7 +56,7 @@ export function ActivityPage() {
         <ErrorBanner error={error} title="Could not load activity" note={null} />
 
         {a && (
-          <div className={`flex items-center gap-3 rounded-xl border p-4 shadow-card ${a.intact ? "border-line bg-surface" : "border-[#f59e0b] bg-warn-bg"}`}>
+          <div className={`flex items-center gap-3 rounded-xl border p-4 shadow-card ${a.intact ? "border-line bg-surface" : "border-warn-text/30 bg-warn-bg"}`}>
             <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${a.intact ? "bg-ok-bg text-ok" : "bg-surface text-warn-text"}`}>
               {a.intact ? <ShieldCheck size={20} aria-hidden /> : <ShieldAlert size={20} aria-hidden />}
             </span>

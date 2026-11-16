@@ -58,7 +58,7 @@ export function ReaLabPage({ onStart }: { onStart: (investigation: Investigation
     <div className="h-full overflow-auto bg-bg">
       <div className="mx-auto max-w-3xl space-y-4 p-6">
         <div className="flex items-start gap-3">
-          <div className="brand-gradient flex h-11 w-11 items-center justify-center rounded-xl text-white shadow-card" aria-hidden><ScanSearch size={22} /></div>
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent-fg" aria-hidden><ScanSearch size={22} /></div>
           <div>
             <h1 className="text-[20px] font-semibold tracking-tight">REA Lab</h1>
             <p className="mt-0.5 text-[13px] text-muted">Understand how software you own or are authorized to inspect works. Every finding comes with evidence and its limits.</p>
