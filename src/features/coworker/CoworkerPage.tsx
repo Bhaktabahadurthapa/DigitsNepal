@@ -61,9 +61,12 @@ export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void })
     setActive(id);
     if (!transcripts[id]) {
       const msgs = await cw.messages(id).catch(() => []);
+      // Approvals left open by an earlier launch are shown again.
+      void cw.resume(id).catch((e) => setError(toAppError(e)));
+      const used = await cw.usage(id).catch(() => null);
       setTranscripts((all) => ({
         ...all,
-        [id]: { running: false, items: msgs.map((m) => (m.role === "user" ? { kind: "user", text: m.text } : { kind: "assistant", text: m.text, streaming: false })) as Item[] },
+        [id]: { running: false, tokens: used ? used.input_tokens + used.output_tokens : 0, items: msgs.map((m) => (m.role === "user" ? { kind: "user", text: m.text } : { kind: "assistant", text: m.text, streaming: false })) as Item[] },
       }));
     }
   };
@@ -198,6 +201,7 @@ export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void })
               <p className="flex items-center gap-1.5 text-[11.5px] text-muted">
                 <span className={`h-1.5 w-1.5 rounded-full ${t.running ? "animate-pulse bg-accent" : status?.provider_ready ? "bg-ok" : "bg-warn-text"}`} aria-hidden />
                 {t.running ? "Working…" : status?.model ? status.model : "सहयोगी · your AI work assistant"}
+                {!!t.tokens && <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10.5px]" title="Tokens used in this chat">{t.tokens.toLocaleString()} tokens</span>}
               </p>
             </div>
           </div>

@@ -43,6 +43,19 @@ pub struct AuditEntry {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct PendingRow {
+    pub id: String,
+    pub session: String,
+    pub kind: String,
+    pub tool: String,
+    pub preview: Value,
+    pub reason: String,
+    pub standing_ok: bool,
+    pub hard_floor: bool,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct SessionRow {
     pub id: String,
     pub agent: String,
@@ -119,6 +132,15 @@ impl Ledger {
              CREATE TABLE IF NOT EXISTS sessions(
                id TEXT PRIMARY KEY, agent TEXT NOT NULL, specialist TEXT NOT NULL, title TEXT NOT NULL,
                created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+             CREATE TABLE IF NOT EXISTS agent_definitions(
+               id TEXT PRIMARY KEY, key TEXT NOT NULL, version INTEGER NOT NULL, definition TEXT NOT NULL, created_at INTEGER NOT NULL);
+             CREATE TABLE IF NOT EXISTS pending_interactions(
+               id TEXT PRIMARY KEY, session TEXT NOT NULL, kind TEXT NOT NULL, tool TEXT NOT NULL, preview TEXT NOT NULL,
+               reason TEXT NOT NULL, standing_ok INTEGER NOT NULL, hard_floor INTEGER NOT NULL,
+               created_at INTEGER NOT NULL, resolved_at INTEGER, decision TEXT);
+             CREATE TABLE IF NOT EXISTS usage(
+               id INTEGER PRIMARY KEY, session TEXT NOT NULL, model TEXT NOT NULL, input_tokens INTEGER NOT NULL,
+               output_tokens INTEGER NOT NULL, ts INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);
              CREATE TABLE IF NOT EXISTS messages(
                id INTEGER PRIMARY KEY, session TEXT NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL, ts INTEGER NOT NULL);
@@ -234,6 +256,103 @@ impl Ledger {
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    // ---- Agent definitions (immutable) ------------------------------------
+
+    /// Store a definition once. An existing ID is never overwritten, so a
+    /// session always resumes with the exact definition it started with.
+    pub fn save_definition(&self, id: &str, key: &str, version: u32, definition: &Value) -> Result<(), LedgerError> {
+        self.conn.lock().unwrap().execute(
+            "INSERT OR IGNORE INTO agent_definitions(id, key, version, definition, created_at) VALUES(?1,?2,?3,?4,?5)",
+            params![id, key, version, definition.to_string(), now()],
+        )?;
+        Ok(())
+    }
+
+    pub fn definition(&self, id: &str) -> Option<Value> {
+        let c = self.conn.lock().unwrap();
+        c.query_row("SELECT definition FROM agent_definitions WHERE id=?1", [id], |r| {
+            r.get::<_, String>(0)
+        })
+        .optional()
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+    }
+
+    // ---- Pending interactions (survive restarts) -------------------------
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_pending(
+        &self,
+        id: &str,
+        session: &str,
+        kind: &str,
+        tool: &str,
+        preview: &Value,
+        reason: &str,
+        standing_ok: bool,
+        hard_floor: bool,
+    ) -> Result<(), LedgerError> {
+        self.conn.lock().unwrap().execute(
+            "INSERT INTO pending_interactions(id, session, kind, tool, preview, reason, standing_ok, hard_floor, created_at)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)
+             ON CONFLICT(id) DO UPDATE SET resolved_at=NULL, decision=NULL",
+            params![id, session, kind, tool, preview.to_string(), reason, standing_ok, hard_floor, now()],
+        )?;
+        Ok(())
+    }
+
+    pub fn resolve_pending(&self, id: &str, decision: &str) -> Result<(), LedgerError> {
+        // The preview is cleared once answered; only the decision remains.
+        self.conn.lock().unwrap().execute(
+            "UPDATE pending_interactions SET resolved_at=?1, decision=?2, preview='null' WHERE id=?3 AND resolved_at IS NULL",
+            params![now(), decision, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn unresolved_pending(&self) -> Result<Vec<PendingRow>, LedgerError> {
+        let c = self.conn.lock().unwrap();
+        let mut st = c.prepare(
+            "SELECT id, session, kind, tool, preview, reason, standing_ok, hard_floor, created_at
+             FROM pending_interactions WHERE resolved_at IS NULL ORDER BY created_at",
+        )?;
+        let rows = st.query_map([], |r| {
+            Ok(PendingRow {
+                id: r.get(0)?,
+                session: r.get(1)?,
+                kind: r.get(2)?,
+                tool: r.get(3)?,
+                preview: serde_json::from_str(&r.get::<_, String>(4)?).unwrap_or(Value::Null),
+                reason: r.get(5)?,
+                standing_ok: r.get(6)?,
+                hard_floor: r.get(7)?,
+                created_at: r.get(8)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    // ---- Token usage -----------------------------------------------------
+
+    pub fn add_usage(&self, session: &str, model: &str, input: u64, output: u64) -> Result<(), LedgerError> {
+        self.conn.lock().unwrap().execute(
+            "INSERT INTO usage(session, model, input_tokens, output_tokens, ts) VALUES(?1,?2,?3,?4,?5)",
+            params![session, model, input as i64, output as i64, now()],
+        )?;
+        Ok(())
+    }
+
+    /// (input, output) tokens for one session, or all sessions when `None`.
+    pub fn usage_totals(&self, session: Option<&str>) -> (u64, u64) {
+        let c = self.conn.lock().unwrap();
+        let q = "SELECT COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0) FROM usage WHERE (?1 IS NULL OR session=?1)";
+        c.query_row(q, [session], |r| {
+            Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64))
+        })
+        .unwrap_or((0, 0))
     }
 
     pub fn kv_get(&self, key: &str) -> Option<String> {
@@ -433,6 +552,58 @@ mod tests {
         }
         l.tamper("DELETE FROM audit_log WHERE seq=2");
         assert_eq!(l.verify_chain().unwrap(), Some(3));
+    }
+
+    #[test]
+    fn definitions_are_immutable_once_saved() {
+        let l = Ledger::in_memory().unwrap();
+        l.save_definition("dn-a-v1-x", "a", 1, &json!({"instructions": "one"}))
+            .unwrap();
+        l.save_definition("dn-a-v1-x", "a", 1, &json!({"instructions": "CHANGED"}))
+            .unwrap();
+        assert_eq!(l.definition("dn-a-v1-x").unwrap()["instructions"], "one");
+        assert!(l.definition("missing").is_none());
+    }
+
+    #[test]
+    fn pending_interactions_survive_until_resolved() {
+        let path = tempfile::tempdir().unwrap().keep().join("c.db");
+        {
+            let l = Ledger::open(&path).unwrap();
+            l.add_pending(
+                "i1",
+                "s1",
+                "approval",
+                "files.create",
+                &json!({"path": "/x"}),
+                "writes",
+                true,
+                false,
+            )
+            .unwrap();
+            l.add_pending("i2", "s1", "approval", "files.move", &json!({}), "moves", true, false)
+                .unwrap();
+            l.resolve_pending("i2", "deny").unwrap();
+        }
+        let l = Ledger::open(&path).unwrap();
+        let open = l.unresolved_pending().unwrap();
+        assert_eq!(open.len(), 1);
+        assert_eq!(
+            (open[0].id.as_str(), open[0].preview["path"].as_str()),
+            ("i1", Some("/x"))
+        );
+        l.resolve_pending("i1", "once").unwrap();
+        assert!(l.unresolved_pending().unwrap().is_empty());
+    }
+
+    #[test]
+    fn usage_totals_per_session_and_overall() {
+        let l = Ledger::in_memory().unwrap();
+        l.add_usage("s1", "m", 100, 20).unwrap();
+        l.add_usage("s1", "m", 50, 5).unwrap();
+        l.add_usage("s2", "m", 10, 1).unwrap();
+        assert_eq!(l.usage_totals(Some("s1")), (150, 25));
+        assert_eq!(l.usage_totals(None), (160, 26));
     }
 
     #[test]

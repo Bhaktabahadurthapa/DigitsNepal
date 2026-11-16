@@ -306,6 +306,9 @@ pub fn run() {
                     },
                     sink,
                 );
+                cw.set_translator(std::sync::Arc::new(commands::coworker::AppTranslator(
+                    app.handle().clone(),
+                )));
                 app.manage(commands::coworker::CoworkerState(cw));
             }
 
@@ -386,6 +389,12 @@ pub fn run() {
             commands::coworker::coworker_cancel,
             #[cfg(feature = "coworker")]
             commands::coworker::coworker_activity,
+            #[cfg(feature = "coworker")]
+            commands::coworker::coworker_pending,
+            #[cfg(feature = "coworker")]
+            commands::coworker::coworker_resume,
+            #[cfg(feature = "coworker")]
+            commands::coworker::coworker_usage,
         ])
         .build(tauri::generate_context!())
         .expect("error while building DigitsNepal")

@@ -35,6 +35,11 @@ describe("coworker transcript", () => {
     expect(t.items).toEqual([{ kind: "assistant", text: "clean", streaming: true }]);
   });
 
+  it("keeps a running token count for the chat", () => {
+    const t = run([{ type: "usage", input_tokens: 100, output_tokens: 7, session_input: 300, session_output: 20 }]);
+    expect(t.tokens).toBe(320);
+  });
+
   it("shows denials and errors", () => {
     const t = run([{ type: "denied", tool: "dn.read_file", reason: "outside" }, { type: "error", message: "model failed" }]);
     expect(t.items.map((i) => i.kind)).toEqual(["denied", "error"]);

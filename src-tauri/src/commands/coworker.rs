@@ -2,7 +2,7 @@
 //! Folder grants are created only here, from explicit user actions.
 
 use super::{cached_key, err, CmdResult};
-use crate::coworker::ledger::{AuditEntry, Grant, SessionRow};
+use crate::coworker::ledger::{AuditEntry, Grant, PendingRow, SessionRow};
 use crate::coworker::providers::{self, ProviderSpec};
 use crate::coworker::service::{Coworker, UserDecision};
 use crate::state::AppState;
@@ -13,6 +13,37 @@ use tauri::State;
 use tauri_plugin_dialog::DialogExt;
 
 pub struct CoworkerState(pub Arc<Coworker>);
+
+/// `translation.translate` for agents: DigitsNepal's existing translation
+/// engine with the provider and consent the user configured in Settings.
+pub struct AppTranslator(pub tauri::AppHandle);
+
+#[async_trait::async_trait]
+impl crate::coworker::tools::Translator for AppTranslator {
+    async fn translate(&self, text: &str, mode: &str) -> Result<serde_json::Value, String> {
+        use crate::translation::engine::{self, RetryPolicy};
+        use crate::translation::types::{TranslateRequest, TranslationMode};
+        use tauri::Manager;
+        let state = self.0.state::<AppState>();
+        let settings = state.settings.lock().unwrap().clone();
+        let provider = super::build_provider(&state, &settings, &settings.provider).map_err(|e| e.message)?;
+        let req = TranslateRequest {
+            text: text.to_string(),
+            mode: TranslationMode::from_id(mode).unwrap_or_default(),
+            include_word_meanings: false,
+        };
+        let r = engine::translate(provider.as_ref(), &req, &RetryPolicy::default())
+            .await
+            .map_err(|e| e.to_string())?;
+        let v = serde_json::to_value(&r).map_err(|e| e.to_string())?;
+        Ok(serde_json::json!({
+            "detected_language": v["detected_language"],
+            "accurate_english": v["accurate_english"],
+            "styled_english": v["styled_english"],
+            "warnings": v["warnings"],
+        }))
+    }
+}
 
 fn spec(state: &AppState) -> CmdResult<ProviderSpec> {
     let s = state.settings.lock().unwrap().clone();
@@ -193,4 +224,37 @@ pub fn coworker_activity(limit: Option<usize>, cw: State<CoworkerState>) -> CmdR
         intact: broken.is_none(),
         broken_at: broken,
     })
+}
+
+#[tauri::command]
+pub fn coworker_pending(cw: State<CoworkerState>) -> Vec<PendingRow> {
+    cw.0.pending()
+}
+
+/// Re-show approvals left waiting by an earlier launch and continue the turn.
+#[tauri::command]
+pub async fn coworker_resume(
+    session: String,
+    state: State<'_, AppState>,
+    cw: State<'_, CoworkerState>,
+) -> CmdResult<bool> {
+    let spec = spec(&state)?;
+    cw.0.resume_pending(&session, &spec)
+        .await
+        .map_err(|e| err("coworker", e.to_string()))
+}
+
+#[derive(Serialize)]
+pub struct Usage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+#[tauri::command]
+pub fn coworker_usage(session: Option<String>, cw: State<CoworkerState>) -> Usage {
+    let (input_tokens, output_tokens) = cw.0.ledger.usage_totals(session.as_deref());
+    Usage {
+        input_tokens,
+        output_tokens,
+    }
 }

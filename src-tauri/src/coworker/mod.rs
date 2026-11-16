@@ -8,6 +8,7 @@
 //! * `providers`— settings → agent-engine model connections
 //! * `service`  — the OpenWorker Harness runtime and session/approval loop
 
+pub mod agents;
 pub mod files;
 pub mod language;
 pub mod ledger;
@@ -18,3 +19,4 @@ pub mod relay;
 #[cfg(feature = "coworker")]
 pub mod service;
 pub mod specialists;
+pub mod tools;

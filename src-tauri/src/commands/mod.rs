@@ -73,7 +73,7 @@ fn remember_saved_key(state: &AppState, id: &str, present: bool) {
     }
 }
 
-fn build_provider(state: &AppState, s: &Settings, id: &str) -> Result<Box<dyn Provider>, ErrorPayload> {
+pub(crate) fn build_provider(state: &AppState, s: &Settings, id: &str) -> Result<Box<dyn Provider>, ErrorPayload> {
     let p = registry::preset(id).ok_or_else(|| err("unknown_provider", format!("Unknown provider '{id}'.")))?;
     // Local servers without a key requirement never touch the Keychain.
     let key = if p.local && !p.needs_key {

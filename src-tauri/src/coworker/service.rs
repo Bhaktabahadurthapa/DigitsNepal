@@ -7,14 +7,13 @@
 //! rest wait for the user's decision in the UI. All outcomes go to the
 //! tamper-evident audit log.
 
-use super::files;
-use super::language;
-use super::ledger::{Ledger, SessionRow};
+use super::agents::{self, AgentDefinition};
+use super::ledger::{Ledger, PendingRow, SessionRow};
 use super::policy::{self, Decision, ToolHints};
 use super::providers::{self, ProviderSpec};
-use super::specialists;
+use super::tools::{self, Translator};
 use openworker_sdk::agents::*;
-use openworker_sdk::{Agent, ApprovalDecision, Approvals, BuiltinTools, Harness, Sandbox, Tool};
+use openworker_sdk::{ApprovalDecision, Harness, Sandbox, Tool};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -69,6 +68,7 @@ pub struct Coworker {
     sessions: Mutex<HashMap<String, Arc<Session>>>,
     pending: Mutex<HashMap<String, Pending>>,
     hints: RwLock<HashMap<String, ToolHints>>,
+    translator: Arc<RwLock<Option<Arc<dyn Translator>>>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -84,7 +84,13 @@ pub enum CoworkerError {
 }
 
 fn engine_err(e: openworker_sdk::Error) -> CoworkerError {
-    CoworkerError::Engine(e.to_string())
+    match e {
+        // The request may already have been processed: never retry blindly.
+        openworker_sdk::Error::OutcomeUnknown => CoworkerError::Engine(
+            "Sahayogi lost contact mid-request, so it may or may not have finished. It was not retried automatically; check the result before asking again.".into(),
+        ),
+        other => CoworkerError::Engine(other.to_string()),
+    }
 }
 
 impl Coworker {
@@ -97,7 +103,18 @@ impl Coworker {
             sessions: Mutex::new(HashMap::new()),
             pending: Mutex::new(HashMap::new()),
             hints: RwLock::new(HashMap::new()),
+            translator: Arc::new(RwLock::new(None)),
         })
+    }
+
+    /// Give agents access to DigitsNepal's translation engine.
+    pub fn set_translator(&self, t: Arc<dyn Translator>) {
+        *self.translator.write().unwrap() = Some(t);
+    }
+
+    /// Approvals and questions still waiting for the user (survive restarts).
+    pub fn pending(&self) -> Vec<PendingRow> {
+        self.ledger.unresolved_pending().unwrap_or_default()
     }
 
     fn emit(&self, session: &str, kind: &str, mut payload: Value) {
@@ -115,7 +132,9 @@ impl Coworker {
             let mut b = Harness::builder()
                 .state_dir(self.cfg.state_dir.clone())
                 .sandbox(Sandbox::Off)
-                .persist_sessions(true);
+                .persist_sessions(true)
+                // Summarise older history before the context window fills.
+                .compact_at_context_fraction(0.8);
             if let Some(r) = &self.cfg.runner {
                 b = b.executable(r.clone());
             }
@@ -123,7 +142,13 @@ impl Coworker {
                 .start()
                 .await
                 .map_err(|e| CoworkerError::Setup(format!("Sahayogi could not start: {e}")))?;
-            register_local_tools(&harness, self.ledger.clone(), self.cfg.backup_dir.clone()).await?;
+            register_tools(
+                &harness,
+                self.ledger.clone(),
+                self.cfg.backup_dir.clone(),
+                self.translator.clone(),
+            )
+            .await?;
             *guard = Some(Engine {
                 harness,
                 connections: HashMap::new(),
@@ -140,81 +165,68 @@ impl Coworker {
         }
     }
 
-    /// Register (once) the model connection and the specialist's agent, and
-    /// return the agent ID. Agent definitions are immutable in the engine, so
-    /// the ID includes a digest of everything that defines it.
-    async fn prepare_agent(&self, spec: &ProviderSpec) -> Result<String, CoworkerError> {
-        let mut guard = self.ensure_engine().await?;
-        let engine = guard.as_mut().expect("engine started");
-        let connection = match engine.connections.get(&spec.connection) {
-            Some(c) => c.clone(),
-            None => {
-                let engine_spec = self.engine_spec(engine, spec).await?;
-                let mut name = engine_spec.connection.clone();
-                if let Err(e) = engine
-                    .harness
-                    .set_model_provider(providers::to_engine(&engine_spec))
-                    .await
-                {
-                    // A moved relay port changes the endpoint, which the engine
-                    // treats as a new connection identity.
-                    let port = engine_spec
-                        .base_url
-                        .rsplit(':')
-                        .next()
-                        .unwrap_or("")
-                        .split('/')
-                        .next()
-                        .unwrap_or("")
-                        .to_string();
-                    name = format!("{}-p{port}", engine_spec.connection);
-                    let retry = ProviderSpec {
-                        connection: name.clone(),
-                        ..engine_spec
-                    };
-                    engine
-                        .harness
-                        .set_model_provider(providers::to_engine(&retry))
-                        .await
-                        .map_err(|_| CoworkerError::Provider(format!("Could not connect the AI provider: {e}")))?;
-                }
-                engine.connections.insert(spec.connection.clone(), name.clone());
-                name
-            }
-        };
-        let spec = &ProviderSpec {
-            connection,
-            ..spec.clone()
-        };
-        let (name, instructions) = ("Sahayogi", specialists::GENERAL_INSTRUCTIONS);
-        let tools: Vec<String> = specialists::LOCAL_TOOLS.iter().map(|s| s.to_string()).collect();
-        let digest = super::ledger::sha256_hex(
-            format!("{}|{}|{}|{}|{tools:?}", spec.connection, spec.model, name, instructions).as_bytes(),
-        );
-        let id = format!("dn-general-{}", &digest[..10]);
+    /// Register (once) the model connection; returns the engine's name for it.
+    async fn ensure_connection(&self, engine: &mut Engine, spec: &ProviderSpec) -> Result<String, CoworkerError> {
+        if let Some(c) = engine.connections.get(&spec.connection) {
+            return Ok(c.clone());
+        }
+        let engine_spec = self.engine_spec(engine, spec).await?;
+        let mut name = engine_spec.connection.clone();
+        if let Err(e) = engine
+            .harness
+            .set_model_provider(providers::to_engine(&engine_spec))
+            .await
+        {
+            // A moved relay port changes the endpoint, which the engine
+            // treats as a new connection identity.
+            let port = engine_spec
+                .base_url
+                .rsplit(':')
+                .next()
+                .unwrap_or("")
+                .split('/')
+                .next()
+                .unwrap_or("")
+                .to_string();
+            name = format!("{}-p{port}", engine_spec.connection);
+            let retry = ProviderSpec {
+                connection: name.clone(),
+                ..engine_spec
+            };
+            engine
+                .harness
+                .set_model_provider(providers::to_engine(&retry))
+                .await
+                .map_err(|_| CoworkerError::Provider(format!("Could not connect the AI provider: {e}")))?;
+        }
+        engine.connections.insert(spec.connection.clone(), name.clone());
+        Ok(name)
+    }
+
+    /// Store (once, immutably) and register an agent definition.
+    async fn register_definition(&self, engine: &mut Engine, def: &AgentDefinition) -> Result<String, CoworkerError> {
+        let id = def.id();
+        self.ledger
+            .save_definition(&id, &def.key, def.version, &def.to_json())
+            .map_err(|e| CoworkerError::Setup(e.to_string()))?;
         if !engine.agents.contains(&id) {
             engine
                 .harness
-                .create_agent(
-                    Agent::new(id.clone())
-                        .name(name)
-                        .instructions(instructions)
-                        .model(spec.connection.clone(), spec.model.clone())
-                        .tools(tools)
-                        .approvals(Approvals::Always)
-                        .builtin_tools(BuiltinTools {
-                            ask_user: Some(true),
-                            read_history: Some(false),
-                        })
-                        .planning(false)
-                        .memory(false)
-                        .scheduling(false),
-                )
+                .create_agent(agents::to_engine(def, &id))
                 .await
                 .map_err(engine_err)?;
             engine.agents.insert(id.clone());
         }
         Ok(id)
+    }
+
+    /// The current coworker definition for this provider; returns its ID.
+    async fn prepare_agent(&self, spec: &ProviderSpec) -> Result<String, CoworkerError> {
+        let mut guard = self.ensure_engine().await?;
+        let engine = guard.as_mut().expect("engine started");
+        let connection = self.ensure_connection(engine, spec).await?;
+        let def = agents::coworker(&connection, &spec.model);
+        self.register_definition(engine, &def).await
     }
 
     /// Cloud OpenAI-compatible providers go through the local compatibility
@@ -285,11 +297,27 @@ impl Coworker {
             .into_iter()
             .find(|r| r.id == id)
             .ok_or(CoworkerError::UnknownSession)?;
-        let agent = self.prepare_agent(spec).await?;
-        if agent != row.agent {
-            return Err(CoworkerError::Setup(
-                "The model or specialist changed since this conversation started. Start a new conversation.".into(),
-            ));
+        {
+            let mut guard = self.ensure_engine().await?;
+            let engine = guard.as_mut().expect("engine started");
+            let connection = self.ensure_connection(engine, spec).await?;
+            // Resume with the exact definition the session started with.
+            let def = self
+                .ledger
+                .definition(&row.agent)
+                .and_then(|v| AgentDefinition::from_json(&v))
+                .ok_or_else(|| {
+                    CoworkerError::Setup(
+                        "This conversation was created by an older version of Sahayogi. Start a new conversation."
+                            .into(),
+                    )
+                })?;
+            if def.connection != connection {
+                return Err(CoworkerError::Setup(
+                    "The AI provider changed since this conversation started. Start a new conversation.".into(),
+                ));
+            }
+            self.register_definition(engine, &def).await?;
         }
         let guard = self.engine.lock().await;
         let harness = &guard.as_ref().expect("engine started").harness;
@@ -340,7 +368,7 @@ impl Coworker {
         let input = text.to_string();
         tokio::spawn(async move {
             me.emit(&sid, "status", json!({"state": "running"}));
-            match me.drive(&sid, &session, &input).await {
+            match me.drive(&sid, &session, Some(&input)).await {
                 Ok(()) => {}
                 Err(e) => {
                     me.emit(&sid, "error", json!({"message": e.to_string()}));
@@ -354,8 +382,40 @@ impl Coworker {
         Ok(())
     }
 
-    async fn drive(&self, sid: &str, session: &Session, input: &str) -> Result<(), CoworkerError> {
-        let mut stream = session.run_streamed(input).await.map_err(engine_err)?;
+    /// Continue a session whose turn paused for approval before a restart.
+    /// Answered calls are not re-run; open approvals are shown again.
+    pub async fn resume_pending(
+        self: &Arc<Self>,
+        session_id: &str,
+        spec: &ProviderSpec,
+    ) -> Result<bool, CoworkerError> {
+        if !self.pending().iter().any(|p| p.session == session_id) {
+            return Ok(false);
+        }
+        if self.pending.lock().unwrap().values().any(|p| match p {
+            Pending::Approval { session, .. } | Pending::Question { session, .. } => session == session_id,
+        }) {
+            return Ok(false); // already waiting in this process
+        }
+        let session = self.session(session_id, spec).await?;
+        let me = self.clone();
+        let sid = session_id.to_string();
+        tokio::spawn(async move {
+            me.emit(&sid, "status", json!({"state": "running"}));
+            if let Err(e) = me.drive(&sid, &session, None).await {
+                me.emit(&sid, "error", json!({"message": e.to_string()}));
+            }
+            me.emit(&sid, "status", json!({"state": "idle"}));
+        });
+        Ok(true)
+    }
+
+    async fn drive(&self, sid: &str, session: &Session, input: Option<&str>) -> Result<(), CoworkerError> {
+        let mut stream = match input {
+            Some(text) => session.run_streamed(text).await,
+            None => session.resume_streamed().await,
+        }
+        .map_err(engine_err)?;
         loop {
             while let Some(ev) = stream.next().await {
                 self.forward(sid, ev);
@@ -418,6 +478,20 @@ impl Coworker {
                 "provider_error",
                 json!({"category": format!("{:?}", diagnostic.category), "retryable": diagnostic.retryable}),
             ),
+            // Token usage for each model call (input, cached input, output).
+            RunEvent::Other(e) if e.kind == "model_usage" => {
+                let input = e.data["input_tokens"].as_u64().unwrap_or(0);
+                let output = e.data["output_tokens"].as_u64().unwrap_or(0);
+                if input + output > 0 {
+                    self.ledger.add_usage(sid, "", input, output).ok();
+                    let (ti, to) = self.ledger.usage_totals(Some(sid));
+                    self.emit(
+                        sid,
+                        "usage",
+                        json!({"input_tokens": input, "output_tokens": output, "session_input": ti, "session_output": to}),
+                    );
+                }
+            }
             _ => {}
         }
     }
@@ -463,6 +537,18 @@ impl Coworker {
                         self.ledger
                             .record(sid, "policy", "tool_call", &q, arguments, "ask", reason)
                             .ok();
+                        self.ledger
+                            .add_pending(
+                                &i.id,
+                                sid,
+                                "approval",
+                                &q,
+                                &preview(Some(arguments)),
+                                reason,
+                                *standing_ok,
+                                *hard_floor,
+                            )
+                            .ok();
                         let (tx, rx) = oneshot::channel();
                         self.pending.lock().unwrap().insert(
                             i.id.clone(),
@@ -494,6 +580,9 @@ impl Coworker {
                                 "",
                             )
                             .ok();
+                        self.ledger
+                            .resolve_pending(&i.id, &format!("{effective:?}").to_lowercase())
+                            .ok();
                         self.emit(sid, "approval_resolved", json!({"id": i.id, "decision": effective}));
                         match effective {
                             UserDecision::Once => Response::Approve(ApprovalDecision::Once),
@@ -505,6 +594,18 @@ impl Coworker {
                 session.respond(i, response).await.map_err(engine_err)
             }
             InterruptionKind::Question { question, options } => {
+                self.ledger
+                    .add_pending(
+                        &i.id,
+                        sid,
+                        "question",
+                        "",
+                        &json!({"question": question, "options": options}),
+                        "",
+                        false,
+                        false,
+                    )
+                    .ok();
                 let (tx, rx) = oneshot::channel();
                 self.pending.lock().unwrap().insert(
                     i.id.clone(),
@@ -519,6 +620,7 @@ impl Coworker {
                     json!({"id": i.id, "question": question, "options": options}),
                 );
                 let answer = rx.await.unwrap_or_default();
+                self.ledger.resolve_pending(&i.id, "answered").ok();
                 session.respond(i, Response::Answer(answer)).await.map_err(engine_err)
             }
             other => Err(CoworkerError::Engine(format!(
@@ -554,6 +656,9 @@ impl Coworker {
         self.pending.lock().unwrap().retain(|_, p| match p {
             Pending::Approval { session, .. } | Pending::Question { session, .. } => session != session_id,
         });
+        for p in self.pending().into_iter().filter(|p| p.session == session_id) {
+            self.ledger.resolve_pending(&p.id, "cancelled").ok();
+        }
         let s = self.sessions.lock().unwrap().get(session_id).cloned();
         if let Some(s) = s {
             let _ = s.cancel().await;
@@ -578,108 +683,48 @@ fn preview(v: Option<&Value>) -> Value {
     }
 }
 
-fn tool_result(r: Result<Value, files::FileError>) -> anyhow::Result<Value> {
-    // Errors are returned to the model as data so it can explain them.
-    Ok(r.unwrap_or_else(|e| json!({"error": e.to_string()})))
-}
-
-fn arg<'a>(v: &'a Value, k: &str) -> &'a str {
-    v.get(k).and_then(Value::as_str).unwrap_or("")
-}
-
-/// DigitsNepal's own tools (namespace `dn`). Each handler re-checks the
-/// folder grant at execution time, independently of the policy decision.
-async fn register_local_tools(h: &Harness, ledger: Arc<Ledger>, backups: PathBuf) -> Result<(), CoworkerError> {
-    let path_schema = |extra: Value| {
-        let mut props = json!({"path": {"type": "string", "description": "Absolute path inside a granted folder"}});
-        if let (Some(p), Some(e)) = (props.as_object_mut(), extra.as_object()) {
-            p.extend(e.clone());
-        }
-        let mut required = vec!["path"];
-        if extra.get("content").is_some() {
-            required.push("content");
-        }
-        json!({"type": "object", "properties": props, "required": required, "additionalProperties": false})
+/// Register the typed tool catalogue (and legacy aliases) with the engine.
+/// Every call runs through `tools::run_guarded`: timeout, cancellation,
+/// audit, and the handler's own folder re-check.
+async fn register_tools(
+    h: &Harness,
+    ledger: Arc<Ledger>,
+    backups: PathBuf,
+    translator: Arc<RwLock<Option<Arc<dyn Translator>>>>,
+) -> Result<(), CoworkerError> {
+    let mut by_ns: std::collections::BTreeMap<String, Vec<Tool>> = Default::default();
+    let mut add = |qualified: &str, spec: &tools::ToolSpec| {
+        let (ns, short) = qualified.split_once('.').expect("qualified tool name");
+        let name = qualified.to_string();
+        let ledger = ledger.clone();
+        let backups = backups.clone();
+        let translator = translator.clone();
+        let tool = Tool::new(short)
+            .description(spec.description)
+            .input_schema(spec.input_schema.clone())
+            .handler(move |args: Value, ctx| {
+                let deps = tools::Deps {
+                    ledger: ledger.clone(),
+                    backups: backups.clone(),
+                    translator: translator.read().unwrap().clone(),
+                };
+                let name = name.clone();
+                async move { Ok(tools::run_guarded(&name, args, &deps, &ctx.session_id, ctx.cancellation()).await) }
+            });
+        by_ns.entry(ns.to_string()).or_default().push(tool);
     };
-    let l1 = ledger.clone();
-    let l2 = ledger.clone();
-    let l3 = ledger.clone();
-    let l4 = ledger.clone();
-    let l5 = ledger.clone();
-    let tools = [
-        Tool::new("understand_text")
-            .description("Offline Nepali understanding: detect Romanized Nepali / Devanagari / English / mixed and return dictionary glosses. Call first for any Nepali or mixed request.")
-            .input_schema(json!({"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}))
-            .handler(|args: Value, _| async move { Ok(language::understand_text(arg(&args, "text"))) }),
-        Tool::new("granted_folders")
-            .description("List the folders the user granted to DigitsNepal (full paths) and the user's home folder. Call this before any file task instead of guessing paths.")
-            .input_schema(json!({"type":"object","properties":{},"additionalProperties":false}))
-            .handler({
-                let l = ledger.clone();
-                move |_: Value, _| {
-                    let l = l.clone();
-                    async move {
-                        let roots: Vec<String> = l.granted_roots().iter().map(|p| p.display().to_string()).collect();
-                        Ok(json!({
-                            "granted_folders": roots,
-                            "home": std::env::var("HOME").unwrap_or_default(),
-                            "note": if roots.is_empty() { "No folders granted yet. Ask the user to add one under Sahayogi → Folders." } else { "" }
-                        }))
-                    }
-                }
-            }),
-        Tool::new("list_folder")
-            .description("List a folder inside a granted folder (newest first).")
-            .input_schema(path_schema(json!({})))
-            .handler(move |args: Value, _| {
-                let l = l1.clone();
-                async move { tool_result(files::list_folder(arg(&args, "path"), &l.granted_roots())) }
-            }),
-        Tool::new("search_files")
-            .description("Find files by name (case-insensitive) under a granted folder; optional extension such as \"pdf\".")
-            .input_schema(json!({"type":"object","properties":{
-                "folder":{"type":"string","description":"Absolute folder path inside a granted folder"},
-                "query":{"type":"string","description":"Part of the file name; empty matches all"},
-                "extension":{"type":"string"}},"required":["folder"],"additionalProperties":false}))
-            .handler(move |args: Value, _| {
-                let l = l2.clone();
-                async move {
-                    let ext = args.get("extension").and_then(Value::as_str).filter(|s| !s.is_empty());
-                    tool_result(files::search_files(arg(&args, "folder"), arg(&args, "query"), ext, &l.granted_roots()))
-                }
-            }),
-        Tool::new("read_file")
-            .description("Read a UTF-8 text file inside a granted folder (up to 256 KB).")
-            .input_schema(path_schema(json!({})))
-            .handler(move |args: Value, _| {
-                let l = l3.clone();
-                async move { tool_result(files::read_file(arg(&args, "path"), &l.granted_roots())) }
-            }),
-        Tool::new("read_pdf")
-            .description("Extract the text of a PDF inside a granted folder.")
-            .input_schema(path_schema(json!({})))
-            .handler(move |args: Value, _| {
-                let l = l4.clone();
-                async move {
-                    let path = arg(&args, "path").to_string();
-                    let roots = l.granted_roots();
-                    tool_result(
-                        tokio::task::spawn_blocking(move || files::read_pdf(&path, &roots))
-                            .await
-                            .unwrap_or_else(|e| Err(files::FileError::Io(e.to_string()))),
-                    )
-                }
-            }),
-        Tool::new("write_file")
-            .description("Create or replace a text file inside a granted folder. Always asks the user first; an existing file is backed up.")
-            .input_schema(path_schema(json!({"content": {"type": "string"}})))
-            .handler(move |args: Value, _| {
-                let l = l5.clone();
-                let b = backups.clone();
-                async move { tool_result(files::write_file(arg(&args, "path"), arg(&args, "content"), &l.granted_roots(), &b)) }
-            }),
-    ];
-    h.register_tools("dn", tools)
-        .await
-        .map_err(|e| CoworkerError::Setup(format!("Could not register tools: {e}")))
+    for spec in tools::specs() {
+        add(spec.name, &spec);
+    }
+    for (old, _) in tools::LEGACY {
+        if let Some(spec) = tools::spec(old) {
+            add(old, &spec);
+        }
+    }
+    for (ns, list) in by_ns {
+        h.register_tools(&ns, list)
+            .await
+            .map_err(|e| CoworkerError::Setup(format!("Could not register tools: {e}")))?;
+    }
+    Ok(())
 }

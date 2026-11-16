@@ -23,6 +23,8 @@ enum Reply {
     /// Token Lab's real stream shape: a usage tail, then a second gateway
     /// accounting chunk with a different id.
     GatewayTail(String),
+    /// Plain text plus a usage chunk (prompt/completion tokens).
+    TextWithUsage(String, u64, u64),
     Tool {
         name_suffix: &'static str,
         args: Value,
@@ -99,6 +101,15 @@ async fn model_server(script: Script) -> String {
                         "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
                         json!({"id":"r","choices":[{"index":0,"delta":{"role":"assistant","content":t},"finish_reason":null}]}),
                         json!({"id":"r","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]})
+                    ),
+                ),
+                Reply::TextWithUsage(t, i, o) => (
+                    "200 OK",
+                    format!(
+                        "data: {}\n\ndata: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
+                        json!({"id":"u","choices":[{"index":0,"delta":{"role":"assistant","content":t},"finish_reason":null}]}),
+                        json!({"id":"u","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}),
+                        json!({"id":"u","choices":[],"usage":{"prompt_tokens":i,"completion_tokens":o}})
                     ),
                 ),
                 Reply::GatewayTail(t) => (
@@ -216,7 +227,7 @@ fn audit_decisions(cw: &Coworker, tool_suffix: &str) -> Vec<(String, String)> {
         .recent(200)
         .unwrap()
         .into_iter()
-        .filter(|e| e.tool.ends_with(tool_suffix))
+        .filter(|e| e.tool.ends_with(tool_suffix) && e.kind != "tool_run")
         .map(|e| (e.actor, e.decision))
         .collect()
 }
@@ -229,11 +240,11 @@ async fn nepali_request_reads_granted_folder_without_asking() {
         let results = tool_results(req);
         match results.len() {
             0 => Reply::Tool {
-                name_suffix: "understand_text",
+                name_suffix: "translation__explain",
                 args: json!({"text": "mero downloads folder ma files list gara"}),
             },
             1 => Reply::Tool {
-                name_suffix: "list_folder",
+                name_suffix: "files__list",
                 args: json!({"path": g.lock().unwrap().clone()}),
             },
             _ => Reply::Text(if results[1].contains("minutes.txt") {
@@ -260,7 +271,7 @@ async fn nepali_request_reads_granted_folder_without_asking() {
         "reads inside a grant need no approval"
     );
     assert_eq!(
-        audit_decisions(&r.cw, "list_folder"),
+        audit_decisions(&r.cw, "files.list"),
         vec![("policy".into(), "allow".into())]
     );
     assert_eq!(r.cw.ledger.verify_chain().unwrap(), None);
@@ -277,7 +288,7 @@ async fn reading_outside_the_grant_is_denied_and_never_executes() {
         let results = tool_results(req);
         if results.is_empty() {
             Reply::Tool {
-                name_suffix: "read_file",
+                name_suffix: "files__read",
                 args: json!({"path": o.lock().unwrap().clone()}),
             }
         } else {
@@ -296,7 +307,7 @@ async fn reading_outside_the_grant_is_denied_and_never_executes() {
     assert!(denied["reason"].as_str().unwrap().contains("outside the folders"));
     wait_for(&r.events, |v| v["type"] == "done").await;
     assert_eq!(
-        audit_decisions(&r.cw, "read_file"),
+        audit_decisions(&r.cw, "files.read"),
         vec![("policy".into(), "deny".into())]
     );
     r.cw.shutdown().await;
@@ -307,7 +318,7 @@ fn write_script(target: Arc<Mutex<String>>) -> Script {
         let results = tool_results(req);
         if results.is_empty() {
             Reply::Tool {
-                name_suffix: "write_file",
+                name_suffix: "files__create",
                 args: json!({"path": target.lock().unwrap().clone(), "content": "# Brief\nShip v2 Friday."}),
             }
         } else if results[0].contains("denied")
@@ -333,7 +344,7 @@ async fn a_denied_write_does_not_execute() {
     let s = r.cw.new_session(&r.spec).await.unwrap();
     r.cw.send(&s.id, "brief lekhdeu", &r.spec).await.unwrap();
     let ask = wait_for(&r.events, |v| v["type"] == "approval_required").await;
-    assert_eq!(ask["tool"], "dn.write_file");
+    assert_eq!(ask["tool"], "files.create");
     assert_eq!(ask["standing_ok"], true);
     assert!(!brief.exists(), "nothing is written while waiting");
     assert!(r.cw.decide(ask["id"].as_str().unwrap(), UserDecision::Deny));
@@ -341,7 +352,7 @@ async fn a_denied_write_does_not_execute() {
     assert_eq!(done["text"], "You declined, so I did not write the brief.");
     assert!(!brief.exists(), "a denied write never runs");
     assert_eq!(
-        audit_decisions(&r.cw, "write_file"),
+        audit_decisions(&r.cw, "files.create"),
         vec![("user".into(), "deny".into()), ("policy".into(), "ask".into())]
     );
     r.cw.shutdown().await;
@@ -393,11 +404,11 @@ async fn injected_instructions_in_a_file_cannot_bypass_approval() {
         let (read, evil) = p.lock().unwrap().clone();
         match results.len() {
             0 => Reply::Tool {
-                name_suffix: "read_file",
+                name_suffix: "files__read",
                 args: json!({"path": read}),
             },
             1 => Reply::Tool {
-                name_suffix: "write_file",
+                name_suffix: "files__create",
                 args: json!({"path": evil, "content": "pwned"}),
             },
             _ => Reply::Text("done".into()),
@@ -420,7 +431,7 @@ async fn injected_instructions_in_a_file_cannot_bypass_approval() {
         .lock()
         .unwrap()
         .iter()
-        .any(|v| v["type"] == "denied" && v["tool"] == "dn.write_file"));
+        .any(|v| v["type"] == "denied" && v["tool"] == "files.create"));
     r.cw.shutdown().await;
 }
 
@@ -513,5 +524,124 @@ async fn token_lab_gateway_stream_works_through_the_relay() {
     let done = wait_for(&r.events, |v| v["type"] == "done" || v["type"] == "error").await;
     assert_eq!(done["type"], "done", "{done}");
     assert_eq!(done["text"], "Namaste from Token Lab");
+    r.cw.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pending_approval_survives_a_restart_and_can_be_answered() {
+    let target = Arc::new(Mutex::new(String::new()));
+    let script = write_script(target.clone());
+    let Some(r) = rig(script.clone(), None).await else {
+        return;
+    };
+    let brief = r.granted.join("brief.md");
+    *target.lock().unwrap() = brief.display().to_string();
+    let s = r.cw.new_session(&r.spec).await.unwrap();
+    r.cw.send(&s.id, "brief lekhdeu", &r.spec).await.unwrap();
+    let ask = wait_for(&r.events, |v| v["type"] == "approval_required").await;
+    let id = ask["id"].as_str().unwrap().to_string();
+    // The app quits while the card is open.
+    r.cw.shutdown().await;
+    let spec = r.spec.clone();
+    let Rig { _dir, .. } = r;
+    let mut r2 = rig(script, Some(_dir)).await.unwrap();
+    r2.spec = spec;
+    let pending = r2.cw.pending();
+    assert_eq!(pending.len(), 1, "the open approval is remembered");
+    assert_eq!(
+        (pending[0].id.as_str(), pending[0].tool.as_str()),
+        (id.as_str(), "files.create")
+    );
+    assert!(!brief.exists());
+    assert!(r2.cw.resume_pending(&s.id, &r2.spec).await.unwrap());
+    let again = wait_for(&r2.events, |v| v["type"] == "approval_required").await;
+    assert!(r2.cw.decide(again["id"].as_str().unwrap(), UserDecision::Once));
+    let done = wait_for(&r2.events, |v| v["type"] == "done").await;
+    assert_eq!(done["text"], "Saved brief.md.");
+    assert_eq!(std::fs::read_to_string(&brief).unwrap(), "# Brief\nShip v2 Friday.");
+    assert!(r2.cw.pending().is_empty());
+    r2.cw.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn token_usage_is_recorded_per_session() {
+    let script: Script = Arc::new(|_| Reply::TextWithUsage("Namaste!".into(), 120, 7));
+    let Some(r) = rig(script, None).await else { return };
+    let s = r.cw.new_session(&r.spec).await.unwrap();
+    r.cw.send(&s.id, "namaste", &r.spec).await.unwrap();
+    wait_for(&r.events, |v| v["type"] == "done").await;
+    let u = wait_for(&r.events, |v| v["type"] == "usage").await;
+    assert_eq!(
+        (u["input_tokens"].as_u64(), u["output_tokens"].as_u64()),
+        (Some(120), Some(7))
+    );
+    assert_eq!(r.cw.ledger.usage_totals(Some(&s.id)), (120, 7));
+    r.cw.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_runaway_tool_loop_stops_at_the_turn_limit() {
+    let calls = Arc::new(Mutex::new(0u32));
+    let c = calls.clone();
+    let script: Script = Arc::new(move |_| {
+        *c.lock().unwrap() += 1;
+        Reply::Tool {
+            name_suffix: "files__granted_folders",
+            args: json!({}),
+        }
+    });
+    let Some(r) = rig(script, None).await else { return };
+    let s = r.cw.new_session(&r.spec).await.unwrap();
+    r.cw.send(&s.id, "loop forever", &r.spec).await.unwrap();
+    let end = wait_for(&r.events, |v| v["type"] == "error" || v["type"] == "done").await;
+    let n = *calls.lock().unwrap();
+    assert!(
+        n <= 41,
+        "model calls are capped by the agent definition (got {n}): {end}"
+    );
+    r.cw.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn translation_tool_reuses_the_translation_engine() {
+    struct Fake;
+    #[async_trait::async_trait]
+    impl digitsnepal_lib::coworker::tools::Translator for Fake {
+        async fn translate(&self, text: &str, mode: &str) -> Result<Value, String> {
+            Ok(json!({"accurate_english": format!("EN({mode}): {text}")}))
+        }
+    }
+    let script: Script = Arc::new(|req| {
+        let results = tool_results(req);
+        if results.is_empty() {
+            Reply::Tool {
+                name_suffix: "translation__translate",
+                args: json!({"text": "Malai thaha chaina", "mode": "professional"}),
+            }
+        } else {
+            assert!(
+                results[0].contains("EN(professional): Malai thaha chaina"),
+                "{}",
+                results[0]
+            );
+            Reply::Text("I don't know.".into())
+        }
+    });
+    let Some(r) = rig(script, None).await else { return };
+    r.cw.set_translator(Arc::new(Fake));
+    let s = r.cw.new_session(&r.spec).await.unwrap();
+    r.cw.send(&s.id, "translate: Malai thaha chaina", &r.spec)
+        .await
+        .unwrap();
+    let done = wait_for(&r.events, |v| v["type"] == "done").await;
+    assert_eq!(done["text"], "I don't know.");
+    assert!(
+        r.events
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|v| v["type"] != "approval_required"),
+        "read tool runs without asking"
+    );
     r.cw.shutdown().await;
 }

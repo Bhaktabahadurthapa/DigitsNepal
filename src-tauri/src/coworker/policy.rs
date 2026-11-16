@@ -6,6 +6,7 @@
 //! this policy, so it cannot widen its own permissions.
 
 use super::files::{is_protected, resolve_in_roots};
+use super::tools::Risk;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -40,11 +41,6 @@ pub struct Context<'a> {
     pub hints: &'a HashMap<String, ToolHints>,
 }
 
-const LOCAL_PURE: &[&str] = &["dn.understand_text", "dn.granted_folders"];
-const PROVIDER_CALL: &[&str] = &["dn.translate_text"];
-const FILE_READS: &[&str] = &["dn.list_folder", "dn.search_files", "dn.read_file", "dn.read_pdf"];
-const FILE_WRITES: &[&str] = &["dn.write_file"];
-
 /// Words that mark irreversible or outward-facing actions. Such calls always
 /// need a fresh human decision, whatever the autonomy settings.
 const HARD_FLOOR_WORDS: &[&str] = &[
@@ -69,15 +65,10 @@ pub fn evaluate(tool: &str, args: &Value, cx: &Context) -> Decision {
     let name = tool.to_ascii_lowercase();
     let short = name.rsplit('.').next().unwrap_or(&name);
 
-    if LOCAL_PURE.contains(&tool) {
-        return allow("Works offline on the text you gave it.");
-    }
-    if PROVIDER_CALL.contains(&tool) {
-        return allow("Uses your configured AI provider, which you already approved in Settings.");
-    }
-    if FILE_READS.contains(&tool) {
-        return match file_paths(args) {
-            Some(paths) if !paths.is_empty() => {
+    if let Some(spec) = super::tools::spec(tool) {
+        let paths = file_paths(args);
+        return match spec.risk {
+            Risk::Read => {
                 for p in &paths {
                     match resolve_in_roots(p, cx.roots, true) {
                         Ok(real) if is_protected(&real) => {
@@ -87,23 +78,50 @@ pub fn evaluate(tool: &str, args: &Value, cx: &Context) -> Decision {
                         Err(e) => return deny(&e.to_string()),
                     }
                 }
-                allow("Reads inside a folder you granted.")
+                if paths.is_empty()
+                    && spec.input_schema["required"]
+                        .as_array()
+                        .is_some_and(|r| r.iter().any(|k| matches!(k.as_str(), Some("path" | "folder"))))
+                {
+                    return deny("No file or folder path was given.");
+                }
+                allow(if paths.is_empty() {
+                    "Read-only; works on the text you gave it."
+                } else {
+                    "Reads inside a folder you granted."
+                })
             }
-            _ => deny("No file or folder path was given."),
-        };
-    }
-    if FILE_WRITES.contains(&tool) {
-        return match args.get("path").and_then(Value::as_str) {
-            Some(p) => match resolve_in_roots(p, cx.roots, false) {
-                Ok(real) if is_protected(&real) => deny("That file usually contains passwords or keys."),
-                Ok(_) => Decision::Ask {
-                    reason: "Writes a file inside a granted folder. An existing file is backed up first.".into(),
+            Risk::WriteLocal => {
+                if paths.is_empty() {
+                    return deny("No file path was given.");
+                }
+                for p in &paths {
+                    match resolve_in_roots(p, cx.roots, false) {
+                        Ok(real) if is_protected(&real) => {
+                            return deny("That file usually contains passwords or keys.")
+                        }
+                        Ok(_) => {}
+                        Err(e) => return deny(&e.to_string()),
+                    }
+                }
+                Decision::Ask {
+                    reason: "Changes files inside a granted folder. An existing file is backed up first; nothing is deleted.".into(),
                     standing_ok: true,
                     hard_floor: false,
-                },
-                Err(e) => deny(&e.to_string()),
+                }
+            }
+            Risk::Egress => Decision::Ask {
+                reason: "Reaches the internet with text chosen by the assistant.".into(),
+                standing_ok: true,
+                hard_floor: false,
             },
-            None => deny("No file path was given."),
+            // Command tools require the OS sandbox, which does not ship yet.
+            Risk::Exec => deny("Running commands needs DigitsNepal's sandbox, which is not available yet."),
+            Risk::External => Decision::Ask {
+                reason: "This affects people or systems outside your Mac. It always needs your approval.".into(),
+                standing_ok: false,
+                hard_floor: true,
+            },
         };
     }
 
@@ -128,14 +146,12 @@ fn deny(r: &str) -> Decision {
     Decision::Deny { reason: r.into() }
 }
 
-fn file_paths(args: &Value) -> Option<Vec<String>> {
-    let mut out = Vec::new();
-    for key in ["path", "folder"] {
-        if let Some(s) = args.get(key).and_then(Value::as_str) {
-            out.push(s.to_string());
-        }
-    }
-    Some(out)
+/// Every path-like argument a file tool can take.
+fn file_paths(args: &Value) -> Vec<String> {
+    ["path", "folder", "from", "to"]
+        .iter()
+        .filter_map(|k| args.get(*k).and_then(Value::as_str).map(str::to_string))
+        .collect()
 }
 
 #[cfg(test)]
@@ -212,6 +228,56 @@ mod tests {
                 &h
             ),
             Decision::Deny { .. }
+        ));
+    }
+
+    #[test]
+    fn typed_tools_follow_their_risk_class() {
+        let d = tempfile::tempdir().unwrap();
+        let g = d.path().join("g");
+        std::fs::create_dir(&g).unwrap();
+        std::fs::write(g.join("a.txt"), "x").unwrap();
+        let roots = vec![g.clone()];
+        let h = HashMap::new();
+        assert!(matches!(
+            run("files.read", json!({"path": g.join("a.txt")}), &roots, &h),
+            Decision::Allow { .. }
+        ));
+        assert!(matches!(
+            run("translation.translate", json!({"text": "namaste"}), &roots, &h),
+            Decision::Allow { .. }
+        ));
+        assert!(matches!(
+            run("files.list", json!({}), &roots, &h),
+            Decision::Deny { .. }
+        ));
+        // Move: both ends must be inside a grant.
+        assert!(matches!(
+            run(
+                "files.move",
+                json!({"from": g.join("a.txt"), "to": g.join("b.txt")}),
+                &roots,
+                &h
+            ),
+            Decision::Ask {
+                standing_ok: true,
+                hard_floor: false,
+                ..
+            }
+        ));
+        assert!(matches!(
+            run(
+                "files.move",
+                json!({"from": g.join("a.txt"), "to": d.path().join("out.txt")}),
+                &roots,
+                &h
+            ),
+            Decision::Deny { .. }
+        ));
+        // Legacy names keep their old behaviour.
+        assert!(matches!(
+            run("dn.read_file", json!({"path": g.join("a.txt")}), &roots, &h),
+            Decision::Allow { .. }
         ));
     }
 

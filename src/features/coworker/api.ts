@@ -21,6 +21,7 @@ export type CoworkerEvent = { session: string } & (
   | { type: "denied"; tool: string; reason: string }
   | { type: "question"; id: string; question: string; options: string[] }
   | { type: "provider_error"; category: string; retryable: boolean }
+  | { type: "usage"; input_tokens: number; output_tokens: number; session_input: number; session_output: number }
   | { type: "done"; text: string }
   | { type: "cancelled" }
   | { type: "error"; message: string }
@@ -38,4 +39,7 @@ export const cw = {
   answer: (id: string, text: string) => invoke<boolean>("coworker_answer", { id, text }),
   cancel: (session: string) => invoke<void>("coworker_cancel", { session }),
   activity: (limit?: number) => invoke<Activity>("coworker_activity", { limit: limit ?? null }),
+  pending: () => invoke<{ id: string; session: string; kind: string; tool: string }[]>("coworker_pending"),
+  resume: (session: string) => invoke<boolean>("coworker_resume", { session }),
+  usage: (session?: string) => invoke<{ input_tokens: number; output_tokens: number }>("coworker_usage", { session: session ?? null }),
 };

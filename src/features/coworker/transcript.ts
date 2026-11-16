@@ -10,7 +10,7 @@ export type Item =
   | { kind: "question"; id: string; question: string; options: string[]; answered?: string }
   | { kind: "error"; text: string };
 
-export interface Transcript { items: Item[]; running: boolean }
+export interface Transcript { items: Item[]; running: boolean; tokens?: number }
 export const empty: Transcript = { items: [], running: false };
 
 function lastAssistant(items: Item[]): number {
@@ -67,6 +67,8 @@ export function reduce(t: Transcript, e: CoworkerEvent): Transcript {
       return { ...t, items };
     case "provider_error":
       return t;
+    case "usage":
+      return { ...t, tokens: e.session_input + e.session_output };
   }
 }
 

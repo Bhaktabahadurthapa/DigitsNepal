@@ -327,6 +327,30 @@ pub fn write_file(path: &str, content: &str, roots: &[PathBuf], backup_root: &Pa
     Ok(json!({"path": p.display().to_string(), "bytes": content.len(), "backup": backup}))
 }
 
+/// Move or rename a file within granted folders. Never overwrites an
+/// existing destination and never moves credential files or folders.
+pub fn move_file(from: &str, to: &str, roots: &[PathBuf]) -> Result<Value, FileError> {
+    let src = resolve_in_roots(from, roots, true)?;
+    let dst = resolve_in_roots(to, roots, false)?;
+    if is_protected(&src) || is_protected(&dst) {
+        return Err(FileError::Refused(
+            "DigitsNepal does not move files that usually contain passwords or keys.".into(),
+        ));
+    }
+    if src.is_dir() {
+        return Err(FileError::Refused(
+            "Moving folders is not supported; move files one by one.".into(),
+        ));
+    }
+    if dst.exists() {
+        return Err(FileError::Refused(
+            "A file already exists at the destination; choose another name.".into(),
+        ));
+    }
+    std::fs::rename(&src, &dst).map_err(|e| FileError::Io(e.to_string()))?;
+    Ok(json!({"from": src.display().to_string(), "to": dst.display().to_string()}))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -434,6 +458,32 @@ mod tests {
             FileError::OutsideGrant
         );
         assert!(!outside.exists());
+    }
+
+    #[test]
+    fn move_stays_inside_grants_and_never_overwrites() {
+        let (d, roots) = setup();
+        let r = &roots[0];
+        let a = r.join("notes.txt").display().to_string();
+        let b = r.join("sub/notes-moved.txt").display().to_string();
+        assert!(move_file(&a, &b, &roots).is_ok());
+        assert!(!std::path::Path::new(&a).exists());
+        std::fs::write(&a, "again").unwrap();
+        assert!(
+            matches!(move_file(&a, &b, &roots), Err(FileError::Refused(_))),
+            "no overwrite"
+        );
+        let out = d.path().join("outside-moved.txt").display().to_string();
+        assert_eq!(move_file(&a, &out, &roots).unwrap_err(), FileError::OutsideGrant);
+        assert!(
+            std::path::Path::new(&a).exists(),
+            "refused move leaves the file in place"
+        );
+        let env = r.join(".env").display().to_string();
+        assert!(matches!(
+            move_file(&env, &r.join("e.txt").display().to_string(), &roots),
+            Err(FileError::Refused(_))
+        ));
     }
 
     #[test]
