@@ -1,6 +1,10 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState } from "react";
+import { ActivityPage } from "../features/coworker/ActivityPage";
+import { CoworkerPage } from "../features/coworker/CoworkerPage";
+import { ReaLabPage } from "../features/coworker/ReaLabPage";
+import type { Investigation } from "../features/coworker/api";
 import { WordExplorer } from "../features/dictionary/WordExplorer";
 import { HistoryPage } from "../features/history/HistoryPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -10,16 +14,20 @@ import { useAppearance } from "../hooks/useAppearance";
 import { isTauri } from "../providers/api";
 import type { WordMeaning } from "../types/translation";
 
-type Tab = "translate" | "explorer" | "history" | "settings";
+type Tab = "translate" | "coworker" | "rea" | "activity" | "explorer" | "history" | "settings";
 const TABS: { id: Tab; label: string; key: string }[] = [
   { id: "translate", label: "Translate", key: "1" },
-  { id: "explorer", label: "Word Explorer", key: "2" },
-  { id: "history", label: "History", key: "3" },
+  { id: "coworker", label: "Coworker", key: "2" },
+  { id: "rea", label: "REA Lab", key: "3" },
+  { id: "activity", label: "Activity", key: "4" },
+  { id: "explorer", label: "Word Explorer", key: "5" },
+  { id: "history", label: "History", key: "6" },
   { id: "settings", label: "Settings", key: "," },
 ];
 
 export function App() {
   const [tab, setTab] = useState<Tab>("translate");
+  const [coworkerStart, setCoworkerStart] = useState<{ specialist: "rea"; investigation: Investigation; prompt: string; n: number } | undefined>();
   const [explore, setExplore] = useState<{ text: string; meanings?: WordMeaning[] }>({ text: "" });
   const [reuse, setReuse] = useState<{ text: string; n: number } | null>(null);
   const { settings, update, error } = useSettings();
@@ -118,6 +126,9 @@ export function App() {
         <div data-tauri-drag-region className={overlay ? "h-1.5" : "h-3"} />
         <div className={overlay ? "h-[calc(100%-0.375rem)]" : "h-[calc(100%-0.75rem)]"}>
           {tab === "translate" && <TranslatePage key={reuse?.n ?? 0} overlay={overlay} onToggleOverlay={toggleOverlay} settings={settings} onOpenSettings={() => setTab("settings")} onExplore={(text, meanings) => { setExplore({ text, meanings }); setTab("explorer"); }} {...(reuse ? { initial: reuse.text } : {})} />}
+          {tab === "coworker" && <CoworkerPage onOpenSettings={() => setTab("settings")} {...(coworkerStart ? { start: coworkerStart } : {})} />}
+          {tab === "rea" && <ReaLabPage onStart={(investigation, prompt) => { setCoworkerStart({ specialist: "rea", investigation, prompt, n: Date.now() }); setTab("coworker"); }} />}
+          {tab === "activity" && <ActivityPage />}
           {tab === "explorer" && <WordExplorer initialText={explore.text} initialMeanings={explore.meanings} />}
           {tab === "history" && <HistoryPage settings={settings} onEnable={() => update({ history_enabled: true })} onReuse={(text) => { setReuse({ text, n: Date.now() }); setTab("translate"); }} />}
           {tab === "settings" && <SettingsPage settings={settings} update={update} error={error} />}

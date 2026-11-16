@@ -16,9 +16,12 @@ use crate::translation::wordgloss;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-type CmdResult<T> = Result<T, ErrorPayload>;
+pub(crate) type CmdResult<T> = Result<T, ErrorPayload>;
 
-fn err(code: &str, message: impl Into<String>) -> ErrorPayload {
+#[cfg(feature = "coworker")]
+pub mod coworker;
+
+pub(crate) fn err(code: &str, message: impl Into<String>) -> ErrorPayload {
     ErrorPayload {
         code: code.into(),
         message: message.into(),
@@ -35,7 +38,7 @@ fn access_err(e: TextAccessError) -> ErrorPayload {
 }
 
 /// Read a provider's API key, from memory if already read this session.
-fn cached_key(state: &AppState, id: &str) -> Result<Option<String>, ErrorPayload> {
+pub(crate) fn cached_key(state: &AppState, id: &str) -> Result<Option<String>, ErrorPayload> {
     if let Some(k) = state.secrets.lock().unwrap().get(id) {
         return Ok(k.clone());
     }
