@@ -1,3 +1,4 @@
+import { useTheme, type Theme } from "../../hooks/useTheme";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button, Notice, Toggle } from "../../components/ui";
 import { ModeSelect } from "../../components/ModeSelect";
@@ -26,6 +27,9 @@ export function SettingsPage({ settings, update, error }: { settings: Settings |
       <div className="mx-auto max-w-2xl space-y-6">
         {error && <div role="alert" className="rounded-md bg-error-bg px-3 py-2 text-error-text">{error.message}</div>}
 
+        <Section title="Appearance">
+          <AppearancePicker />
+        </Section>
         <Section title="AI provider">
           <ProviderSettings settings={s} update={update} />
         </Section>
@@ -90,5 +94,29 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{title}</h2>
       <div className="divide-y divide-line rounded-lg border border-line bg-surface px-4">{children}</div>
     </section>
+  );
+}
+
+function AppearancePicker() {
+  const [theme, setTheme] = useTheme();
+  const options: { id: Theme; label: string }[] = [
+    { id: "light", label: "Light" },
+    { id: "dark", label: "Dark" },
+    { id: "system", label: "Match system" },
+  ];
+  return (
+    <div role="radiogroup" aria-label="Appearance" className="inline-flex rounded-lg border border-line bg-surface-2 p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.id}
+          role="radio"
+          aria-checked={theme === o.id}
+          onClick={() => setTheme(o.id)}
+          className={`h-7 rounded-md px-3 text-[12.5px] transition-colors ${theme === o.id ? "bg-surface font-medium text-ink shadow-card" : "text-muted hover:text-ink"}`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
   );
 }

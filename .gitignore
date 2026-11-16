@@ -11,3 +11,4 @@ src-tauri/gen/schemas/
 *.mobileprovision
 eval-reports/
 !pwa/.env.production
+src-tauri/binaries/

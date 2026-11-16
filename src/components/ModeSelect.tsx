@@ -27,7 +27,7 @@ export function ModeSelect({ value, onChange, compact }: { value: TranslationMod
           aria-checked={value === m.id}
           title={m.hint}
           onClick={() => onChange(m.id)}
-          className={`h-6 rounded px-2.5 text-[12px] transition-colors ${value === m.id ? "bg-accent text-white dark:text-[#0d1630]" : "text-muted hover:text-ink"}`}
+          className={`h-6 rounded px-2.5 text-[12px] transition-colors ${value === m.id ? "bg-accent text-on-accent" : "text-muted hover:text-ink"}`}
         >
           {m.label}
         </button>

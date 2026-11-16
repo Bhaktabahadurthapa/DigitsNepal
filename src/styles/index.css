@@ -1,47 +1,5 @@
 @import "tailwindcss";
-
-/* Native-macOS-utility tokens. Light by default, dark via system setting. */
-:root {
-  --bg-solid: #f5f5f4;
-  --surface-solid: #ffffff;
-  --surface-2-solid: #fafaf9;
-  --sidebar-solid: #ecebe8;
-  --border: #e2e0dc;
-  --text: #1c1b1a;
-  --muted: #6b6862;
-  --accent: #003893;       /* Nepal-flag blue */
-  --accent-soft: #e6edf8;
-  --crimson: #b3122f;      /* Nepal-flag crimson, for emphasis only */
-  --warn-bg: #fff6e0;
-  --warn-text: #7a4b00;
-  --error-bg: #fdecec;
-  --error-text: #8a1c1c;
-  --ok: #1f7a3d;
-  --focus: #2f6fdb;
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg-solid: #1b1b1d;
-    --surface-solid: #242426;
-    --surface-2-solid: #2a2a2d;
-    --sidebar-solid: #202022;
-    --border: #38383c;
-    --text: #ececec;
-    --muted: #a1a1a6;
-    --accent: #7ea6ff;
-    --accent-soft: #23304d;
-    --crimson: #ff7a8a;
-    --warn-bg: #3a2f17;
-    --warn-text: #f3cf86;
-    --error-bg: #3c1f22;
-    --error-text: #ffb4b4;
-    --ok: #6fd08f;
-    --focus: #7ea6ff;
-    color-scheme: dark;
-  }
-}
+@import "./tokens.css";
 
 :root {
   /* Window background opacity (Settings › Overlay). Text is never faded. */
@@ -61,14 +19,25 @@
   --color-ink: var(--text);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--on-accent);
+  --color-ok-bg: var(--ok-bg);
+  --color-side-text: var(--side-text);
+  --color-side-muted: var(--side-muted);
+  --color-side-hover: var(--side-hover);
+  --color-side-active: var(--side-active);
+  --shadow-card: var(--shadow-sm);
+  --shadow-raised: var(--shadow-md);
+  --radius-card: var(--radius-lg);
   --color-crimson: var(--crimson);
   --color-warn-bg: var(--warn-bg);
   --color-warn-text: var(--warn-text);
   --color-error-bg: var(--error-bg);
   --color-error-text: var(--error-text);
   --color-ok: var(--ok);
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Kohinoor Devanagari", "Helvetica Neue", sans-serif;
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Kohinoor Devanagari", "Helvetica Neue", sans-serif;
   --font-deva: "Kohinoor Devanagari", "Devanagari Sangam MN", -apple-system, sans-serif;
 }
 
@@ -88,6 +57,7 @@ body {
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 13px;
+  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
   user-select: none;
   -webkit-user-select: none;
@@ -120,4 +90,20 @@ input,
 /* Keep text legible over whatever is behind a translucent window. */
 :root.glass body {
   text-shadow: 0 0 6px var(--bg-solid);
+}
+
+
+button:not(:disabled),
+[role="button"],
+label[for],
+summary {
+  cursor: pointer;
+}
+
+@keyframes dn-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.fade-in {
+  animation: dn-fade-in var(--duration-base) var(--ease-standard);
 }

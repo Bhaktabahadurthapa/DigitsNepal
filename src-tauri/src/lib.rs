@@ -9,6 +9,7 @@
 pub mod accessibility;
 pub mod clipboard;
 pub mod commands;
+pub mod coworker;
 pub mod security;
 pub mod shortcuts;
 pub mod state;
@@ -267,6 +268,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             let data = app.path().app_data_dir()?;
@@ -282,6 +284,30 @@ pub fn run() {
                 seq: Mutex::new(0),
                 secrets: Mutex::new(Default::default()),
             });
+
+            #[cfg(feature = "coworker")]
+            {
+                use coworker::{
+                    ledger::Ledger,
+                    service::{Config, Coworker},
+                };
+                let ledger = std::sync::Arc::new(Ledger::open(&data.join("coworker").join("coworker.db"))?);
+                let emitter = app.handle().clone();
+                let sink: coworker::service::Sink = std::sync::Arc::new(move |v| {
+                    let _ = emitter.emit("coworker:event", v);
+                });
+                let cw = Coworker::new(
+                    ledger,
+                    Config {
+                        state_dir: data.join("coworker").join("engine"),
+                        workspace_dir: data.join("coworker").join("workspace"),
+                        backup_dir: data.join("coworker").join("backups"),
+                        runner: None,
+                    },
+                    sink,
+                );
+                app.manage(commands::coworker::CoworkerState(cw));
+            }
 
             let handle = app.handle().clone();
             apply_window_prefs(&handle, &settings);
@@ -338,6 +364,28 @@ pub fn run() {
             commands::accessibility_status,
             commands::request_accessibility,
             commands::open_main,
+            #[cfg(feature = "coworker")]
+            commands::coworker::coworker_status,
+            #[cfg(feature = "coworker")]
+            commands::coworker::coworker_add_grant,
+            #[cfg(feature = "coworker")]
+            commands::coworker::coworker_revoke_grant,
+            #[cfg(feature = "coworker")]
+            commands::coworker::coworker_sessions,
+            #[cfg(feature = "coworker")]
+            commands::coworker::coworker_messages,
+            #[cfg(feature = "coworker")]
+            commands::coworker::coworker_new_session,
+            #[cfg(feature = "coworker")]
+            commands::coworker::coworker_send,
+            #[cfg(feature = "coworker")]
+            commands::coworker::coworker_decide,
+            #[cfg(feature = "coworker")]
+            commands::coworker::coworker_answer,
+            #[cfg(feature = "coworker")]
+            commands::coworker::coworker_cancel,
+            #[cfg(feature = "coworker")]
+            commands::coworker::coworker_activity,
         ])
         .build(tauri::generate_context!())
         .expect("error while building DigitsNepal")

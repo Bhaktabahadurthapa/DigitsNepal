@@ -35,6 +35,7 @@ DigitsNepal keeps the meaning, tense, negation and tone of what you wrote. The f
 - **Word Meaning Explorer:** contextual and literal meaning, Devanagari spelling, and ambiguity notes for every word and phrase.
 - **Six modes:** Accurate, Professional, Casual, Academic, Technical, and Grammar Correction.
 - **iPhone web app:** a private, installable companion at [digitsnepal.com/app](https://digitsnepal.com/app) for Romanized Nepali → English on the go. See [iPhone app](docs/IPHONE_APP.md).
+- **Sahayogi (सहयोगी) AI assistant (preview):** ask for work in Romanized Nepali, like *mero downloads folder ma pdf haru khojera summarize gara*. It works only in folders you grant, asks before changing files, and logs every step. See [Sahayogi](docs/COWORKER.md).
 - **Meeting overlay:** a compact, translucent, always-on-top window that can be hidden from screen sharing.
 - **Model of your choice:** DigitsNepalAI runs locally with Ollama or LM Studio, or with your own key for Claude, Gemini, OpenAI, OpenRouter, Groq, Mistral, DeepSeek, Together, xAI, or any OpenAI-compatible server.
 
@@ -87,7 +88,7 @@ npm run check        # typecheck, tests, lint
 
 ## Documentation
 
-[Architecture](docs/ARCHITECTURE.md) · [iPhone app](docs/IPHONE_APP.md) · [Evaluation](docs/EVALUATION.md) · [Release process](docs/RELEASE.md) · [Changelog](CHANGELOG.md)
+[Architecture](docs/ARCHITECTURE.md) · [Sahayogi](docs/COWORKER.md) · [iPhone app](docs/IPHONE_APP.md) · [Evaluation](docs/EVALUATION.md) · [Release process](docs/RELEASE.md) · [Changelog](CHANGELOG.md)
 
 ## Contributing
 

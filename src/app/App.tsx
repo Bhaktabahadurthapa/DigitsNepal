@@ -1,6 +1,9 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { Activity, BookOpen, Clock, Keyboard, Languages, Settings as SettingsIcon, Sparkles, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ActivityPage } from "../features/coworker/ActivityPage";
+import { CoworkerPage } from "../features/coworker/CoworkerPage";
 import { WordExplorer } from "../features/dictionary/WordExplorer";
 import { HistoryPage } from "../features/history/HistoryPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -10,13 +13,28 @@ import { useAppearance } from "../hooks/useAppearance";
 import { isTauri } from "../providers/api";
 import type { WordMeaning } from "../types/translation";
 
-type Tab = "translate" | "explorer" | "history" | "settings";
+type Tab = "translate" | "coworker" | "activity" | "explorer" | "history" | "settings";
 const TABS: { id: Tab; label: string; key: string }[] = [
   { id: "translate", label: "Translate", key: "1" },
-  { id: "explorer", label: "Word Explorer", key: "2" },
-  { id: "history", label: "History", key: "3" },
+  { id: "coworker", label: "Sahayogi", key: "2" },
+  { id: "activity", label: "Activity", key: "3" },
+  { id: "explorer", label: "Word Explorer", key: "4" },
+  { id: "history", label: "History", key: "5" },
   { id: "settings", label: "Settings", key: "," },
 ];
+const NAV_GROUPS: { title: string; tabs: Tab[] }[] = [
+  { title: "Language", tabs: ["translate", "explorer", "history"] },
+  { title: "Assistant", tabs: ["coworker", "activity"] },
+  { title: "App", tabs: ["settings"] },
+];
+const ICONS: Record<Tab, LucideIcon> = {
+  translate: Languages,
+  coworker: Sparkles,
+  activity: Activity,
+  explorer: BookOpen,
+  history: Clock,
+  settings: SettingsIcon,
+};
 
 export function App() {
   const [tab, setTab] = useState<Tab>("translate");
@@ -79,38 +97,56 @@ export function App() {
 
   return (
     <div className="flex h-full">
-      <nav aria-label="Main" hidden={overlay} className="flex w-48 shrink-0 flex-col border-r border-line bg-sidebar">
-        <div data-tauri-drag-region className="h-12" />
-        <div className="px-4 pb-4">
-          <div className="text-[15px] font-semibold tracking-tight">DigitsNepal</div>
-          <div className="text-[11px] text-muted">Every Nepali Word Has Meaning.</div>
+      <nav aria-label="Main" hidden={overlay} className="flex w-52 shrink-0 flex-col border-r border-line bg-sidebar text-side-text">
+        <div data-tauri-drag-region className="h-11" />
+        <div className="flex items-center gap-2.5 px-4 pb-5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-[15px] font-semibold text-on-accent deva" aria-hidden>अ</div>
+          <div className="min-w-0">
+            <div className="text-[14px] font-semibold tracking-tight">DigitsNepal</div>
+            <div className="truncate text-[10.5px] text-side-muted">Every Nepali Word Has Meaning.</div>
+          </div>
         </div>
-        <ul className="space-y-0.5 px-2">
-          {TABS.map((t) => (
-            <li key={t.id}>
-              <button
-                type="button"
-                aria-current={tab === t.id ? "page" : undefined}
-                onClick={() => setTab(t.id)}
-                className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors ${tab === t.id ? "bg-accent-soft font-medium text-ink" : "text-muted hover:bg-surface-2 hover:text-ink"}`}
-              >
-                {t.label}
-                <span className="text-[10.5px] opacity-60">⌘{t.key}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        {NAV_GROUPS.map((g) => (
+          <div key={g.title} className="mb-4 px-2">
+            <div className="px-2.5 pb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-side-muted">{g.title}</div>
+            <ul className="space-y-0.5">
+              {g.tabs.map((id) => {
+                const t = TABS.find((x) => x.id === id)!;
+                const Icon = ICONS[id];
+                const active = tab === id;
+                return (
+                  <li key={id}>
+                    <button
+                      type="button"
+                      aria-current={active ? "page" : undefined}
+                      onClick={() => setTab(id)}
+                      className={`group flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] transition-colors duration-150 ${active ? "bg-side-active font-medium text-side-text" : "text-side-text hover:bg-side-hover"}`}
+                    >
+                      <Icon size={16} strokeWidth={1.9} className={active ? "text-accent" : "text-side-muted"} aria-hidden />
+                      <span className="flex-1">{t.label}</span>
+                      <span className="text-[10.5px] text-side-muted opacity-0 transition-opacity group-hover:opacity-100">⌘{t.key}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
         <div className="flex-1" />
-        <div className="space-y-1 p-4 text-[11px] text-muted">
+        <div className="m-2 rounded-lg border border-line bg-surface p-3 text-[11px] text-side-muted">
           {settings && (
             <>
-              <div>
-                Shortcut: <span className="font-mono">{settings.shortcut_enabled && !settings.paused ? shortcut : "off"}</span>
+              <div className="flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full ${settings.provider ? "bg-ok" : "bg-side-muted"}`} aria-hidden />
+                <span className="truncate">AI: <span className="text-side-text">{settings.provider}</span></span>
               </div>
-              <div>Provider: {settings.provider}</div>
+              <div className="mt-1 flex items-center gap-1.5">
+                <Keyboard size={12} aria-hidden />
+                Shortcut <span className="font-mono text-side-text">{settings.shortcut_enabled && !settings.paused ? shortcut : "off"}</span>
+              </div>
             </>
           )}
-          {!isTauri() && <div className="text-crimson">Browser preview with demo data — not real translations. Run the desktop app for full features.</div>}
+          {!isTauri() && <div className="mt-1 text-error-text">Browser preview with demo data. Run the desktop app for full features.</div>}
         </div>
       </nav>
 
@@ -118,6 +154,8 @@ export function App() {
         <div data-tauri-drag-region className={overlay ? "h-1.5" : "h-3"} />
         <div className={overlay ? "h-[calc(100%-0.375rem)]" : "h-[calc(100%-0.75rem)]"}>
           {tab === "translate" && <TranslatePage key={reuse?.n ?? 0} overlay={overlay} onToggleOverlay={toggleOverlay} settings={settings} onOpenSettings={() => setTab("settings")} onExplore={(text, meanings) => { setExplore({ text, meanings }); setTab("explorer"); }} {...(reuse ? { initial: reuse.text } : {})} />}
+          {tab === "coworker" && <CoworkerPage onOpenSettings={() => setTab("settings")} />}
+          {tab === "activity" && <ActivityPage />}
           {tab === "explorer" && <WordExplorer initialText={explore.text} initialMeanings={explore.meanings} />}
           {tab === "history" && <HistoryPage settings={settings} onEnable={() => update({ history_enabled: true })} onReuse={(text) => { setReuse({ text, n: Date.now() }); setTab("translate"); }} />}
           {tab === "settings" && <SettingsPage settings={settings} update={update} error={error} />}

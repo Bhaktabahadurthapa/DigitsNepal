@@ -14,6 +14,11 @@ jobs:
         with: { components: "rustfmt, clippy" }
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: src-tauri }
+      - uses: actions/cache@v4
+        with:
+          path: src-tauri/binaries
+          key: harness-runner-ecb445490fc054d52b8ea610d97ba947f57033d2-${{ runner.os }}-${{ runner.arch }}
+      - run: scripts/build-harness-runner.sh
       - run: npm ci
       - run: npm run build
       - run: npm run typecheck
@@ -21,7 +26,9 @@ jobs:
       - run: npm run eval:check
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --features coworker
+        env:
+          DN_HARNESS_RUNNER: ${{ github.workspace }}/src-tauri/binaries/openworker-harness-aarch64-apple-darwin
   web:
     runs-on: ubuntu-latest
     steps:

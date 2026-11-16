@@ -5,7 +5,7 @@ description = "Nepali-English AI writing and translation assistant"
 authors = ["DigitsNepal contributors"]
 license = "MIT"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.96"
 
 [lib]
 name = "digitsnepal_lib"
@@ -21,12 +21,22 @@ tauri-plugin-clipboard-manager = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 tokio = { version = "1", features = ["time", "sync", "macros", "rt-multi-thread"] }
 async-trait = "0.1"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 log = "0.4"
+
+# DigitsNepal Coworker agent engine: OpenWorker Harness (MIT), embedded in-process.
+# Pinned to an exact commit: the SDK is beta and not yet published on crates.io.
+openworker-sdk = { git = "https://github.com/andrewyng/openworker.git", rev = "ecb445490fc054d52b8ea610d97ba947f57033d2", default-features = false, optional = true }
+futures-util = { version = "0.3", optional = true }
+anyhow = { version = "1", optional = true }
+# Coworker governance store (same rusqlite as the Harness, so one SQLite build).
+rusqlite = { version = "0.32", features = ["bundled"] }
+sha2 = "0.10"
+tauri-plugin-dialog = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
@@ -48,3 +58,7 @@ strip = true
 [profile.release.build-override]
 strip = false
 opt-level = 0
+
+[features]
+default = ["coworker"]
+coworker = ["dep:openworker-sdk", "dep:futures-util", "dep:anyhow"]
