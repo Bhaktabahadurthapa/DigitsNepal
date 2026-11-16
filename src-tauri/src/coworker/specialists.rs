@@ -12,6 +12,7 @@ pub enum Specialist {
 
 pub const LOCAL_TOOLS: &[&str] = &[
     "dn.understand_text",
+    "dn.granted_folders",
     "dn.list_folder",
     "dn.search_files",
     "dn.read_file",
@@ -28,6 +29,7 @@ Language
 
 Files
 - You can only use folders the user granted in DigitsNepal (Coworker → Folders). You cannot grant access yourself. If a folder is not granted, say exactly which folder to add and stop.
+- Always call dn.granted_folders first and use only those full paths; never guess paths such as /Users/user. "Downloads", "Documents" etc. mean the matching folder under the user's home, and only if it is granted.
 - Use full paths. Prefer dn.search_files to locate files, dn.read_pdf for PDFs, dn.read_file for text.
 - dn.write_file always asks the user first and backs up existing files. Never claim a file was written unless the tool succeeded. There is no delete tool; do not attempt deletion.
 

@@ -42,7 +42,7 @@ pub struct Context<'a> {
     pub hints: &'a HashMap<String, ToolHints>,
 }
 
-const LOCAL_PURE: &[&str] = &["dn.understand_text"];
+const LOCAL_PURE: &[&str] = &["dn.understand_text", "dn.granted_folders"];
 const PROVIDER_CALL: &[&str] = &["dn.translate_text"];
 const FILE_READS: &[&str] = &["dn.list_folder", "dn.search_files", "dn.read_file", "dn.read_pdf"];
 const FILE_WRITES: &[&str] = &["dn.write_file"];

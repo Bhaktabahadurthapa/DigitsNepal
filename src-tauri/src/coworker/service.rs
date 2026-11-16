@@ -684,6 +684,23 @@ async fn register_local_tools(h: &Harness, ledger: Arc<Ledger>, backups: PathBuf
             .description("Offline Nepali understanding: detect Romanized Nepali / Devanagari / English / mixed and return dictionary glosses. Call first for any Nepali or mixed request.")
             .input_schema(json!({"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}))
             .handler(|args: Value, _| async move { Ok(language::understand_text(arg(&args, "text"))) }),
+        Tool::new("granted_folders")
+            .description("List the folders the user granted to DigitsNepal (full paths) and the user's home folder. Call this before any file task instead of guessing paths.")
+            .input_schema(json!({"type":"object","properties":{},"additionalProperties":false}))
+            .handler({
+                let l = ledger.clone();
+                move |_: Value, _| {
+                    let l = l.clone();
+                    async move {
+                        let roots: Vec<String> = l.granted_roots().iter().map(|p| p.display().to_string()).collect();
+                        Ok(json!({
+                            "granted_folders": roots,
+                            "home": std::env::var("HOME").unwrap_or_default(),
+                            "note": if roots.is_empty() { "No folders granted yet. Ask the user to add one under Coworker → Folders." } else { "" }
+                        }))
+                    }
+                }
+            }),
         Tool::new("list_folder")
             .description("List a folder inside a granted folder (newest first).")
             .input_schema(path_schema(json!({})))
