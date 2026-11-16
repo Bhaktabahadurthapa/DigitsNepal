@@ -386,14 +386,6 @@ pub fn run() {
             commands::coworker::coworker_cancel,
             #[cfg(feature = "coworker")]
             commands::coworker::coworker_activity,
-            #[cfg(feature = "coworker")]
-            commands::coworker::rea_readiness,
-            #[cfg(feature = "coworker")]
-            commands::coworker::rea_targets,
-            #[cfg(feature = "coworker")]
-            commands::coworker::rea_add_target,
-            #[cfg(feature = "coworker")]
-            commands::coworker::rea_revoke_target,
         ])
         .build(tauri::generate_context!())
         .expect("error while building DigitsNepal")

@@ -1,7 +1,7 @@
-//! Coworker governance store: folder grants, authorized REA targets, the
-//! session index and a tamper-evident audit log.
+//! Sahayogi governance store: folder grants, the session index, messages
+//! and a tamper-evident audit log.
 //!
-//! Grants and targets are created only by explicit user actions in the UI
+//! Grants are created only by explicit user actions in the UI
 //! (Tauri commands); no agent tool can write to this store. Every audit entry
 //! carries the SHA-256 of the previous entry, so any edit or deletion breaks
 //! the chain and is reported by [`Ledger::verify_chain`].
@@ -20,25 +20,6 @@ pub struct Grant {
     pub id: i64,
     /// Canonical absolute folder path.
     pub path: String,
-    pub created_at: i64,
-}
-
-#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum TargetKind {
-    /// A website origin, e.g. `https://digitsnepal.com`.
-    Origin,
-    /// A local application or project path.
-    Path,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct Target {
-    pub id: i64,
-    pub kind: TargetKind,
-    pub value: String,
-    /// The user's statement, e.g. "I own this website".
-    pub attestation: String,
     pub created_at: i64,
 }
 
@@ -135,9 +116,6 @@ impl Ledger {
              PRAGMA foreign_keys=ON;
              CREATE TABLE IF NOT EXISTS grants(
                id INTEGER PRIMARY KEY, path TEXT NOT NULL, created_at INTEGER NOT NULL, revoked_at INTEGER);
-             CREATE TABLE IF NOT EXISTS targets(
-               id INTEGER PRIMARY KEY, kind TEXT NOT NULL, value TEXT NOT NULL, attestation TEXT NOT NULL,
-               created_at INTEGER NOT NULL, revoked_at INTEGER);
              CREATE TABLE IF NOT EXISTS sessions(
                id TEXT PRIMARY KEY, agent TEXT NOT NULL, specialist TEXT NOT NULL, title TEXT NOT NULL,
                created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
@@ -220,72 +198,6 @@ impl Ledger {
             .into_iter()
             .map(|g| PathBuf::from(g.path))
             .collect()
-    }
-
-    // ---- Authorized REA targets ---------------------------------------------
-
-    pub fn add_target(&self, kind: TargetKind, value: &str, attestation: &str) -> Result<Target, LedgerError> {
-        let attestation = attestation.trim();
-        if attestation.len() < 8 {
-            return Err(LedgerError::Invalid(
-                "Confirm that you own or are authorized to inspect this target.".into(),
-            ));
-        }
-        let value = match kind {
-            TargetKind::Origin => normalize_origin(value)
-                .ok_or_else(|| LedgerError::Invalid("Enter a website address starting with https://".into()))?,
-            TargetKind::Path => std::fs::canonicalize(value)
-                .map_err(|_| LedgerError::Invalid("That path does not exist.".into()))?
-                .to_string_lossy()
-                .to_string(),
-        };
-        let kind_s = match kind {
-            TargetKind::Origin => "origin",
-            TargetKind::Path => "path",
-        };
-        let ts = now();
-        let c = self.conn.lock().unwrap();
-        c.execute(
-            "INSERT INTO targets(kind, value, attestation, created_at) VALUES(?1, ?2, ?3, ?4)",
-            params![kind_s, value, attestation, ts],
-        )?;
-        Ok(Target {
-            id: c.last_insert_rowid(),
-            kind,
-            value,
-            attestation: attestation.into(),
-            created_at: ts,
-        })
-    }
-
-    pub fn revoke_target(&self, id: i64) -> Result<(), LedgerError> {
-        self.conn
-            .lock()
-            .unwrap()
-            .execute("UPDATE targets SET revoked_at=?1 WHERE id=?2", params![now(), id])?;
-        Ok(())
-    }
-
-    pub fn targets(&self) -> Result<Vec<Target>, LedgerError> {
-        let c = self.conn.lock().unwrap();
-        let mut st = c.prepare(
-            "SELECT id, kind, value, attestation, created_at FROM targets WHERE revoked_at IS NULL ORDER BY id",
-        )?;
-        let rows = st.query_map([], |r| {
-            let kind: String = r.get(1)?;
-            Ok(Target {
-                id: r.get(0)?,
-                kind: if kind == "origin" {
-                    TargetKind::Origin
-                } else {
-                    TargetKind::Path
-                },
-                value: r.get(2)?,
-                attestation: r.get(3)?,
-                created_at: r.get(4)?,
-            })
-        })?;
-        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     // ---- Sessions -----------------------------------------------------------
@@ -465,25 +377,6 @@ fn row_to_entry(r: &rusqlite::Row) -> rusqlite::Result<AuditEntry> {
     })
 }
 
-/// `https://Example.com/path?q` → `https://example.com`. Only https (or
-/// loopback http) origins are accepted.
-pub fn normalize_origin(input: &str) -> Option<String> {
-    let s = input.trim();
-    let (scheme, rest) = s.split_once("://")?;
-    let scheme = scheme.to_ascii_lowercase();
-    let host_port = rest.split(['/', '?', '#']).next()?.to_ascii_lowercase();
-    if host_port.is_empty() || host_port.contains('@') {
-        return None;
-    }
-    let host = host_port.split(':').next().unwrap_or_default();
-    let loopback = host == "localhost" || host.starts_with("127.") || host == "[::1]";
-    match scheme.as_str() {
-        "https" => Some(format!("https://{host_port}")),
-        "http" if loopback => Some(format!("http://{host_port}")),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -559,41 +452,5 @@ mod tests {
         assert_eq!(e.args_digest.len(), 64);
         let all = serde_json::to_string(&l.recent(10).unwrap()).unwrap();
         assert!(!all.contains("salary"));
-    }
-
-    #[test]
-    fn targets_require_attestation_and_valid_origin() {
-        let l = Ledger::in_memory().unwrap();
-        assert!(l
-            .add_target(TargetKind::Origin, "https://digitsnepal.com/app", "ok")
-            .is_err());
-        let t = l
-            .add_target(
-                TargetKind::Origin,
-                "https://DigitsNepal.com/app?x=1",
-                "I own this website",
-            )
-            .unwrap();
-        assert_eq!(t.value, "https://digitsnepal.com");
-        assert!(l
-            .add_target(TargetKind::Origin, "http://example.com", "I own this website")
-            .is_err());
-        assert!(l
-            .add_target(TargetKind::Origin, "ftp://x", "I own this website")
-            .is_err());
-    }
-
-    #[test]
-    fn origin_normalisation() {
-        assert_eq!(
-            normalize_origin("https://a.com:8443/x").as_deref(),
-            Some("https://a.com:8443")
-        );
-        assert_eq!(
-            normalize_origin("http://127.0.0.1:3000/").as_deref(),
-            Some("http://127.0.0.1:3000")
-        );
-        assert_eq!(normalize_origin("https://user@a.com"), None);
-        assert_eq!(normalize_origin("a.com"), None);
     }
 }

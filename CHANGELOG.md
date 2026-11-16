@@ -4,7 +4,6 @@
 
 ### Added
 - Sahayogi (सहयोगी), the AI work assistant (preview): understands Romanized Nepali, works only in folders you grant, asks before writing, and records every decision in a tamper-evident Activity log. Powered by the OpenWorker Harness SDK (embedded).
-- App Insights: Sahayogi can investigate how websites and apps you are authorized to inspect work, with evidence and stated limits.
 - iPhone web app at digitsnepal.com/app: an installable PWA with Accurate, Professional and Grammar modes, word meanings, one-tap copy and share, light and dark appearance, and optional on-device history (off by default).
 - Private translation API on Cloudflare Workers: access-code sign-in with signed device tokens, origin lock, daily quota, burst and size limits, automatic Gemini model selection, and no content logging.
 

@@ -12,10 +12,9 @@ use super::language;
 use super::ledger::{Ledger, SessionRow};
 use super::policy::{self, Decision, ToolHints};
 use super::providers::{self, ProviderSpec};
-use super::rea::{self, Investigation};
-use super::specialists::{self, Specialist};
+use super::specialists;
 use openworker_sdk::agents::*;
-use openworker_sdk::{Agent, ApprovalDecision, Approvals, BuiltinTools, Harness, McpServer, Sandbox, Tool};
+use openworker_sdk::{Agent, ApprovalDecision, Approvals, BuiltinTools, Harness, Sandbox, Tool};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -51,7 +50,6 @@ struct Engine {
     connections: HashMap<String, String>,
     relays: HashMap<String, super::relay::Relay>,
     agents: HashSet<String>,
-    mcp: HashSet<String>,
 }
 
 pub struct Config {
@@ -131,7 +129,6 @@ impl Coworker {
                 connections: HashMap::new(),
                 relays: HashMap::new(),
                 agents: HashSet::new(),
-                mcp: HashSet::new(),
             });
         }
         Ok(guard)
@@ -146,12 +143,7 @@ impl Coworker {
     /// Register (once) the model connection and the specialist's agent, and
     /// return the agent ID. Agent definitions are immutable in the engine, so
     /// the ID includes a digest of everything that defines it.
-    async fn prepare_agent(
-        &self,
-        spec: &ProviderSpec,
-        specialist: Specialist,
-        investigation: Option<Investigation>,
-    ) -> Result<String, CoworkerError> {
+    async fn prepare_agent(&self, spec: &ProviderSpec) -> Result<String, CoworkerError> {
         let mut guard = self.ensure_engine().await?;
         let engine = guard.as_mut().expect("engine started");
         let connection = match engine.connections.get(&spec.connection) {
@@ -194,61 +186,12 @@ impl Coworker {
             connection,
             ..spec.clone()
         };
-        let (name, instructions, tools): (&str, &str, Vec<String>) = match specialist {
-            Specialist::General => (
-                "Sahayogi",
-                specialists::GENERAL_INSTRUCTIONS,
-                specialists::LOCAL_TOOLS.iter().map(|s| s.to_string()).collect(),
-            ),
-            Specialist::Rea => {
-                let inv = investigation.unwrap_or(Investigation::Website);
-                let ns = format!("rea_{}", inv.id());
-                let (ready, inst) = rea::readiness();
-                let inst = inst.ok_or_else(|| CoworkerError::Setup(ready.problems.join(" ")))?;
-                let families = inv.families();
-                let catalog = tokio::task::spawn_blocking({
-                    let inst = inst.clone();
-                    move || rea::discover_tools(&inst, families, std::time::Duration::from_secs(120))
-                })
-                .await
-                .map_err(|e| CoworkerError::Setup(e.to_string()))?
-                .map_err(CoworkerError::Setup)?;
-                if catalog.is_empty() {
-                    return Err(CoworkerError::Setup(
-                        "App Insights has no tools for this kind of investigation.".into(),
-                    ));
-                }
-                // Engine MCP identities are immutable: version and scope are part of the name.
-                let ns = format!(
-                    "{ns}_{}",
-                    &super::ledger::sha256_hex(format!("{}{families:?}", inst.version).as_bytes())[..6]
-                );
-                if engine.mcp.insert(ns.clone()) {
-                    let (program, args) = rea::launch_args(&inst, families);
-                    engine
-                        .harness
-                        .start_mcp_server(McpServer::stdio(ns.clone(), program, args))
-                        .await
-                        .map_err(|e| CoworkerError::Setup(format!("Could not start App Insights: {e}")))?;
-                }
-                self.hints.write().unwrap().extend(rea::hints_for(&ns, &catalog));
-                let mut tools: Vec<String> = catalog.iter().map(|t| format!("{ns}.{}", t.name)).collect();
-                tools.push("dn.understand_text".into());
-                ("Sahayogi App Insights", specialists::REA_INSTRUCTIONS, tools)
-            }
-        };
+        let (name, instructions) = ("Sahayogi", specialists::GENERAL_INSTRUCTIONS);
+        let tools: Vec<String> = specialists::LOCAL_TOOLS.iter().map(|s| s.to_string()).collect();
         let digest = super::ledger::sha256_hex(
             format!("{}|{}|{}|{}|{tools:?}", spec.connection, spec.model, name, instructions).as_bytes(),
         );
-        let id = format!(
-            "dn-{}-{}",
-            if specialist == Specialist::General {
-                "general"
-            } else {
-                "rea"
-            },
-            &digest[..10]
-        );
+        let id = format!("dn-general-{}", &digest[..10]);
         if !engine.agents.contains(&id) {
             engine
                 .harness
@@ -305,13 +248,8 @@ impl Coworker {
 
     // ---- Sessions -----------------------------------------------------------
 
-    pub async fn new_session(
-        &self,
-        spec: &ProviderSpec,
-        specialist: Specialist,
-        investigation: Option<Investigation>,
-    ) -> Result<SessionRow, CoworkerError> {
-        let agent = self.prepare_agent(spec, specialist, investigation).await?;
+    pub async fn new_session(&self, spec: &ProviderSpec) -> Result<SessionRow, CoworkerError> {
+        let agent = self.prepare_agent(spec).await?;
         let guard = self.engine.lock().await;
         let harness = &guard.as_ref().expect("engine started").harness;
         std::fs::create_dir_all(&self.cfg.workspace_dir).map_err(|e| CoworkerError::Setup(e.to_string()))?;
@@ -323,10 +261,7 @@ impl Coworker {
         let row = SessionRow {
             id: session.id().to_string(),
             agent,
-            specialist: match specialist {
-                Specialist::General => "general".into(),
-                Specialist::Rea => format!("rea_{}", investigation.unwrap_or(Investigation::Website).id()),
-            },
+            specialist: "general".into(),
             title: "New conversation".into(),
             created_at: now,
             updated_at: now,
@@ -350,13 +285,7 @@ impl Coworker {
             .into_iter()
             .find(|r| r.id == id)
             .ok_or(CoworkerError::UnknownSession)?;
-        let (specialist, inv) = match row.specialist.as_str() {
-            "general" => (Specialist::General, None),
-            "rea_js" => (Specialist::Rea, Some(Investigation::JavascriptApp)),
-            "rea_desktop" => (Specialist::Rea, Some(Investigation::DesktopApp)),
-            _ => (Specialist::Rea, Some(Investigation::Website)),
-        };
-        let agent = self.prepare_agent(spec, specialist, inv).await?;
+        let agent = self.prepare_agent(spec).await?;
         if agent != row.agent {
             return Err(CoworkerError::Setup(
                 "The model or specialist changed since this conversation started. Start a new conversation.".into(),
@@ -503,14 +432,12 @@ impl Coworker {
             } => {
                 let q = qualified_name.clone().unwrap_or_else(|| tool.replacen("__", ".", 1));
                 let roots = self.ledger.granted_roots();
-                let targets = self.ledger.targets().unwrap_or_default();
                 let hints = self.hints.read().unwrap().clone();
                 let decision = policy::evaluate(
                     &q,
                     arguments,
                     &policy::Context {
                         roots: &roots,
-                        targets: &targets,
                         hints: &hints,
                     },
                 );

@@ -1,12 +1,10 @@
-//! Tauri commands for the Coworker, REA Lab and Activity screens.
-//! Grants and REA targets are created only here, from explicit user actions.
+//! Tauri commands for the Sahayogi and Activity screens.
+//! Folder grants are created only here, from explicit user actions.
 
 use super::{cached_key, err, CmdResult};
-use crate::coworker::ledger::{AuditEntry, Grant, SessionRow, Target, TargetKind};
+use crate::coworker::ledger::{AuditEntry, Grant, SessionRow};
 use crate::coworker::providers::{self, ProviderSpec};
-use crate::coworker::rea::{self, Investigation, Readiness};
 use crate::coworker::service::{Coworker, UserDecision};
-use crate::coworker::specialists::Specialist;
 use crate::state::AppState;
 use crate::translation::registry;
 use serde::Serialize;
@@ -141,14 +139,9 @@ pub fn coworker_messages(session: String, cw: State<CoworkerState>) -> CmdResult
 }
 
 #[tauri::command]
-pub async fn coworker_new_session(
-    specialist: Specialist,
-    investigation: Option<Investigation>,
-    state: State<'_, AppState>,
-    cw: State<'_, CoworkerState>,
-) -> CmdResult<SessionRow> {
+pub async fn coworker_new_session(state: State<'_, AppState>, cw: State<'_, CoworkerState>) -> CmdResult<SessionRow> {
     let spec = spec(&state)?;
-    cw.0.new_session(&spec, specialist, investigation)
+    cw.0.new_session(&spec)
         .await
         .map_err(|e| err("coworker", e.to_string()))
 }
@@ -200,50 +193,4 @@ pub fn coworker_activity(limit: Option<usize>, cw: State<CoworkerState>) -> CmdR
         intact: broken.is_none(),
         broken_at: broken,
     })
-}
-
-#[tauri::command]
-pub async fn rea_readiness() -> Readiness {
-    tauri::async_runtime::spawn_blocking(|| rea::readiness().0)
-        .await
-        .unwrap_or_else(|e| Readiness {
-            ready: false,
-            node: None,
-            node_version: None,
-            rea_script: None,
-            rea_version: None,
-            problems: vec![e.to_string()],
-        })
-}
-
-#[tauri::command]
-pub fn rea_targets(cw: State<CoworkerState>) -> CmdResult<Vec<Target>> {
-    cw.0.ledger.targets().map_err(le)
-}
-
-#[tauri::command]
-pub fn rea_add_target(
-    kind: TargetKind,
-    value: String,
-    attestation: String,
-    cw: State<CoworkerState>,
-) -> CmdResult<Target> {
-    let t = cw.0.ledger.add_target(kind, &value, &attestation).map_err(le)?;
-    cw.0.ledger
-        .record(
-            "",
-            "user",
-            "authorize_target",
-            "",
-            &serde_json::json!(t.value),
-            "authorized",
-            &t.attestation,
-        )
-        .map_err(le)?;
-    Ok(t)
-}
-
-#[tauri::command]
-pub fn rea_revoke_target(id: i64, cw: State<CoworkerState>) -> CmdResult<()> {
-    cw.0.ledger.revoke_target(id).map_err(le)
 }

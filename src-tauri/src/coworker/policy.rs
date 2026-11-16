@@ -6,7 +6,6 @@
 //! this policy, so it cannot widen its own permissions.
 
 use super::files::{is_protected, resolve_in_roots};
-use super::ledger::{normalize_origin, Target, TargetKind};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -37,8 +36,7 @@ pub enum Decision {
 
 pub struct Context<'a> {
     pub roots: &'a [PathBuf],
-    pub targets: &'a [Target],
-    /// Annotations of MCP tools, keyed by qualified name (e.g. `rea.inspect_web_page`).
+    /// Annotations of MCP tools, keyed by qualified name (e.g. `github.create_issue`).
     pub hints: &'a HashMap<String, ToolHints>,
 }
 
@@ -65,28 +63,6 @@ const HARD_FLOOR_WORDS: &[&str] = &[
     "post_",
     "email",
     "sudo",
-];
-/// REA operations that launch, drive or instrument a target. They change
-/// external state or execute target code, so they are hard-floor.
-const REA_RUNTIME_WORDS: &[&str] = &[
-    "capture_",
-    "observe_",
-    "instrument",
-    "start_",
-    "launch",
-    "frida",
-    "gdb",
-    "rizin_debug",
-    "adb",
-    "stop_",
-    "load_frida",
-    "unload_frida",
-    "resume_",
-    "trace_native_ui",
-    "build_desktop",
-    "extract_firmware",
-    "pull_",
-    "push_",
 ];
 
 pub fn evaluate(tool: &str, args: &Value, cx: &Context) -> Decision {
@@ -131,30 +107,6 @@ pub fn evaluate(tool: &str, args: &Value, cx: &Context) -> Decision {
         };
     }
 
-    let is_rea = name.starts_with("rea.") || name.starts_with("rea_");
-    if is_rea {
-        if let Err(reason) = targets_authorized(args, cx.targets) {
-            return deny(&reason);
-        }
-        let hints = cx.hints.get(tool).copied().unwrap_or_default();
-        if hints.destructive || REA_RUNTIME_WORDS.iter().any(|w| short.contains(w)) {
-            return Decision::Ask {
-                reason: "This step runs, drives or changes the app or website. It needs your approval every time."
-                    .into(),
-                standing_ok: false,
-                hard_floor: true,
-            };
-        }
-        if hints.read_only {
-            return allow("Read-only analysis of an app or website you authorized.");
-        }
-        return Decision::Ask {
-            reason: "Analysis step on an app or website you authorized.".into(),
-            standing_ok: false,
-            hard_floor: false,
-        };
-    }
-
     if HARD_FLOOR_WORDS.iter().any(|w| short.contains(w)) {
         return Decision::Ask {
             reason: "This action is irreversible or affects others. It always needs your approval.".into(),
@@ -186,103 +138,13 @@ fn file_paths(args: &Value) -> Option<Vec<String>> {
     Some(out)
 }
 
-/// Every URL and absolute path in the arguments must belong to a target the
-/// user authorized. Arguments without any target reference (for example a
-/// follow-up view of retained evidence) pass.
-pub fn targets_authorized(args: &Value, targets: &[Target]) -> Result<(), String> {
-    let mut strings = Vec::new();
-    collect_strings(args, &mut strings, 0);
-    for s in strings {
-        let s = s.trim();
-        if s.starts_with("http://") || s.starts_with("https://") || s.starts_with("ws://") || s.starts_with("wss://") {
-            let as_http = s.replacen("wss://", "https://", 1).replacen("ws://", "http://", 1);
-            let origin = normalize_origin(&as_http).ok_or_else(|| format!("{s} is not a supported web address."))?;
-            // Local browser debugging endpoints (CDP) are the user's own browser.
-            let loopback = origin.starts_with("http://127.") || origin.starts_with("http://localhost");
-            let ok = loopback
-                || targets
-                    .iter()
-                    .any(|t| t.kind == TargetKind::Origin && t.value == origin);
-            if !ok {
-                return Err(format!(
-                    "{origin} is not an authorized target. Add it in App Insights first."
-                ));
-            }
-        } else if looks_like_local_path(s) {
-            let real = std::fs::canonicalize(s).unwrap_or_else(|_| PathBuf::from(s));
-            let ok = targets
-                .iter()
-                .any(|t| t.kind == TargetKind::Path && real.starts_with(&t.value));
-            if !ok {
-                return Err(format!(
-                    "{} is not an authorized target. Add it in App Insights first.",
-                    real.display()
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
-/// A filesystem path (not a URL route such as `/api/users`): it exists on this
-/// Mac or starts at a top-level macOS location.
-fn looks_like_local_path(s: &str) -> bool {
-    const TOP: &[&str] = &[
-        "/Users/",
-        "/Applications/",
-        "/Volumes/",
-        "/private/",
-        "/tmp/",
-        "/var/",
-        "/opt/",
-        "/Library/",
-        "/System/",
-        "/usr/",
-        "/etc/",
-        "/bin/",
-        "/sbin/",
-    ];
-    s.starts_with('/')
-        && s.len() > 1
-        && !s.contains('\n')
-        && (TOP.iter().any(|t| s.starts_with(t)) || std::path::Path::new(s).exists())
-}
-
-fn collect_strings<'a>(v: &'a Value, out: &mut Vec<&'a str>, depth: usize) {
-    if depth > 8 {
-        return;
-    }
-    match v {
-        Value::String(s) => out.push(s),
-        Value::Array(a) => a.iter().for_each(|x| collect_strings(x, out, depth + 1)),
-        Value::Object(o) => o.values().for_each(|x| collect_strings(x, out, depth + 1)),
-        _ => {}
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
 
-    fn target(kind: TargetKind, value: &str) -> Target {
-        Target {
-            id: 1,
-            kind,
-            value: value.into(),
-            attestation: "I own this".into(),
-            created_at: 0,
-        }
-    }
-
-    fn run(
-        tool: &str,
-        args: Value,
-        roots: &[PathBuf],
-        targets: &[Target],
-        hints: &HashMap<String, ToolHints>,
-    ) -> Decision {
-        evaluate(tool, &args, &Context { roots, targets, hints })
+    fn run(tool: &str, args: Value, roots: &[PathBuf], hints: &HashMap<String, ToolHints>) -> Decision {
+        evaluate(tool, &args, &Context { roots, hints })
     }
 
     #[test]
@@ -295,20 +157,20 @@ mod tests {
         let roots = vec![g.clone()];
         let h = HashMap::new();
         assert!(matches!(
-            run("dn.read_file", json!({"path": g.join("a.txt")}), &roots, &[], &h),
+            run("dn.read_file", json!({"path": g.join("a.txt")}), &roots, &h),
             Decision::Allow { .. }
         ));
         assert!(matches!(
-            run("dn.read_file", json!({"path": d.path().join("b.txt")}), &roots, &[], &h),
+            run("dn.read_file", json!({"path": d.path().join("b.txt")}), &roots, &h),
             Decision::Deny { .. }
         ));
         assert!(matches!(
-            run("dn.list_folder", json!({}), &roots, &[], &h),
+            run("dn.list_folder", json!({}), &roots, &h),
             Decision::Deny { .. }
         ));
         assert!(
             matches!(
-                run("dn.read_file", json!({"path": g.join("a.txt")}), &[], &[], &h),
+                run("dn.read_file", json!({"path": g.join("a.txt")}), &[], &h),
                 Decision::Deny { .. }
             ),
             "no grants"
@@ -324,7 +186,6 @@ mod tests {
             "dn.write_file",
             json!({"path": d.path().join("brief.md"), "content": "x"}),
             &roots,
-            &[],
             &h,
         ) {
             Decision::Ask {
@@ -339,7 +200,6 @@ mod tests {
                 "dn.write_file",
                 json!({"path": "/etc/hosts", "content": "x"}),
                 &roots,
-                &[],
                 &h
             ),
             Decision::Deny { .. }
@@ -349,7 +209,6 @@ mod tests {
                 "dn.write_file",
                 json!({"path": d.path().join(".env"), "content": "x"}),
                 &roots,
-                &[],
                 &h
             ),
             Decision::Deny { .. }
@@ -365,7 +224,7 @@ mod tests {
             "files.delete_file",
             "shop.purchase",
         ] {
-            match run(tool, json!({}), &[], &[], &h) {
+            match run(tool, json!({}), &[], &h) {
                 Decision::Ask {
                     hard_floor,
                     standing_ok,
@@ -375,122 +234,10 @@ mod tests {
             }
         }
         assert!(matches!(
-            run("other.tool", json!({}), &[], &[], &h),
+            run("other.tool", json!({}), &[], &h),
             Decision::Ask {
                 hard_floor: false,
                 standing_ok: false,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn rea_requires_authorized_targets() {
-        let mut h = HashMap::new();
-        h.insert(
-            "rea.inspect_web_page".to_string(),
-            ToolHints {
-                read_only: true,
-                destructive: false,
-            },
-        );
-        let t = [target(TargetKind::Origin, "https://digitsnepal.com")];
-        assert!(matches!(
-            run(
-                "rea.inspect_web_page",
-                json!({"url": "https://digitsnepal.com/app"}),
-                &[],
-                &t,
-                &h
-            ),
-            Decision::Allow { .. }
-        ));
-        assert!(matches!(
-            run(
-                "rea.inspect_web_page",
-                json!({"url": "https://example.com"}),
-                &[],
-                &t,
-                &h
-            ),
-            Decision::Deny { .. }
-        ));
-        assert!(matches!(
-            run(
-                "rea.inspect_web_page",
-                json!({"url": "https://digitsnepal.com"}),
-                &[],
-                &[],
-                &h
-            ),
-            Decision::Deny { .. }
-        ));
-        // Nested and websocket references are checked too.
-        assert!(matches!(
-            run(
-                "rea.inspect_web_page",
-                json!({"opts": {"targets": ["wss://evil.example/socket"]}}),
-                &[],
-                &t,
-                &h
-            ),
-            Decision::Deny { .. }
-        ));
-        // URL routes inside evidence queries are not filesystem paths.
-        assert!(matches!(
-            run(
-                "rea.inspect_web_page",
-                json!({"url": "https://digitsnepal.com", "where": {"route": "/api/users"}}),
-                &[],
-                &t,
-                &h
-            ),
-            Decision::Allow { .. }
-        ));
-        // Paths must be authorized REA path targets.
-        assert!(matches!(
-            run(
-                "rea.inspect_web_page",
-                json!({"path": "/Applications/Other.app"}),
-                &[],
-                &t,
-                &h
-            ),
-            Decision::Deny { .. }
-        ));
-    }
-
-    #[test]
-    fn rea_runtime_and_destructive_tools_are_hard_floor() {
-        let mut h = HashMap::new();
-        h.insert(
-            "rea.export_evidence_bundle".to_string(),
-            ToolHints {
-                read_only: false,
-                destructive: true,
-            },
-        );
-        let t = [target(TargetKind::Origin, "https://digitsnepal.com")];
-        for tool in [
-            "rea.capture_browser_scenario",
-            "rea.start_frida_session",
-            "rea.export_evidence_bundle",
-        ] {
-            match run(tool, json!({"url": "https://digitsnepal.com"}), &[], &t, &h) {
-                Decision::Ask {
-                    hard_floor: true,
-                    standing_ok: false,
-                    ..
-                } => {}
-                other => panic!("{tool}: {other:?}"),
-            }
-        }
-        // Unknown REA tool without hints: ask, never a session-wide grant.
-        assert!(matches!(
-            run("rea.analyze_something", json!({}), &[], &t, &h),
-            Decision::Ask {
-                standing_ok: false,
-                hard_floor: false,
                 ..
             }
         ));
@@ -500,7 +247,7 @@ mod tests {
     fn language_tools_run_locally() {
         let h = HashMap::new();
         assert!(matches!(
-            run("dn.understand_text", json!({"text": "k cha"}), &[], &[], &h),
+            run("dn.understand_text", json!({"text": "k cha"}), &[], &h),
             Decision::Allow { .. }
         ));
     }

@@ -1,13 +1,13 @@
 import { listen } from "@tauri-apps/api/event";
 import {
   AlertTriangle, ArrowUp, Ban, Check, ChevronDown, FileSearch, FileText, Folder, FolderOpen, FolderPlus, Languages,
-  Loader2, MessageSquare, Plus, ScanSearch, ShieldAlert, ShieldCheck, Sparkles, Square, X,
+  Loader2, MessageSquare, Plus, ShieldAlert, ShieldCheck, Sparkles, Square, X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, ErrorBanner } from "../../components/ui";
 import { toAppError } from "../../providers/api";
 import type { AppError } from "../../types/translation";
-import { cw, type CoworkerEvent, type Decision, type Investigation, type SessionRow, type Specialist, type Status } from "./api";
+import { cw, type CoworkerEvent, type Decision, type SessionRow, type Status } from "./api";
 import { empty, reduce, type Item, type Transcript } from "./transcript";
 
 const EXAMPLES: { icon: typeof FileSearch; text: string; hint: string }[] = [
@@ -24,7 +24,7 @@ function timeAgo(ms: number): string {
   return `${Math.round(s / 86400)}d`;
 }
 
-export function CoworkerPage({ onOpenSettings, start }: { onOpenSettings: () => void; start?: { specialist: Specialist; investigation?: Investigation; prompt?: string; n: number } }) {
+export function CoworkerPage({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -68,11 +68,11 @@ export function CoworkerPage({ onOpenSettings, start }: { onOpenSettings: () => 
     }
   };
 
-  const newSession = useCallback(async (specialist: Specialist = "general", investigation?: Investigation) => {
+  const newSession = useCallback(async () => {
     setBusy(true);
     setError(null);
     try {
-      const s = await cw.newSession(specialist, investigation);
+      const s = await cw.newSession();
       setSessions((all) => [s, ...all]);
       setTranscripts((all) => ({ ...all, [s.id]: empty }));
       setActive(s.id);
@@ -104,17 +104,6 @@ export function CoworkerPage({ onOpenSettings, start }: { onOpenSettings: () => 
     [active, newSession],
   );
 
-  // App Insights and other screens can start a specialist conversation here.
-  const started = useRef(0);
-  useEffect(() => {
-    if (!start || started.current === start.n) return;
-    started.current = start.n;
-    void (async () => {
-      const id = await newSession(start.specialist, start.investigation);
-      if (id && start.prompt) await send(start.prompt, id);
-    })();
-  }, [start, newSession, send]);
-
   const addFolder = async (typed?: string) => {
     setError(null);
     try {
@@ -127,8 +116,6 @@ export function CoworkerPage({ onOpenSettings, start }: { onOpenSettings: () => 
   };
 
   const t = active ? transcripts[active] ?? empty : empty;
-  const activeRow = sessions.find((s) => s.id === active);
-  const isRea = activeRow?.specialist.startsWith("rea") ?? false;
 
   return (
     <div className="flex h-full min-h-0 bg-bg">
@@ -181,7 +168,7 @@ export function CoworkerPage({ onOpenSettings, start }: { onOpenSettings: () => 
           ) : (
             <ul className="space-y-0.5">
               {sessions.map((s) => {
-                const Icon = s.specialist.startsWith("rea") ? ScanSearch : MessageSquare;
+                const Icon = MessageSquare;
                 return (
                   <li key={s.id}>
                     <button
@@ -205,9 +192,9 @@ export function CoworkerPage({ onOpenSettings, start }: { onOpenSettings: () => 
       <section className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-5">
           <div className="flex items-center gap-3">
-            <Avatar rea={isRea} />
+            <Avatar />
             <div>
-              <h1 className="text-[14px] font-semibold leading-tight">{isRea ? "Sahayogi · App Insights" : "Sahayogi"}</h1>
+              <h1 className="text-[14px] font-semibold leading-tight">Sahayogi</h1>
               <p className="flex items-center gap-1.5 text-[11.5px] text-muted">
                 <span className={`h-1.5 w-1.5 rounded-full ${t.running ? "animate-pulse bg-accent" : status?.provider_ready ? "bg-ok" : "bg-warn-text"}`} aria-hidden />
                 {t.running ? "Working…" : status?.model ? status.model : "सहयोगी · your AI work assistant"}
@@ -239,7 +226,7 @@ export function CoworkerPage({ onOpenSettings, start }: { onOpenSettings: () => 
             ) : (
               <ol className="space-y-4" aria-live="polite">
                 {t.items.map((it, i) => (
-                  <ItemView key={i} item={it} rea={isRea} onDecide={(id, d) => void cw.decide(id, d)} onAnswer={(id, a) => void cw.answer(id, a)} />
+                  <ItemView key={i} item={it} onDecide={(id, d) => void cw.decide(id, d)} onAnswer={(id, a) => void cw.answer(id, a)} />
                 ))}
               </ol>
             )}
@@ -277,10 +264,10 @@ export function CoworkerPage({ onOpenSettings, start }: { onOpenSettings: () => 
   );
 }
 
-function Avatar({ rea = false, size = 32 }: { rea?: boolean; size?: number }) {
+function Avatar({ size = 32 }: { size?: number }) {
   return (
     <div className="flex shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent-fg" style={{ width: size, height: size }} aria-hidden>
-      {rea ? <ScanSearch size={size * 0.5} /> : <Sparkles size={size * 0.5} />}
+      <Sparkles size={size * 0.5} />
     </div>
   );
 }
@@ -320,7 +307,7 @@ function EmptyState({ onPick, hasFolders, onAddFolder }: { onPick: (t: string) =
   );
 }
 
-function ItemView({ item, rea, onDecide, onAnswer }: { item: Item; rea: boolean; onDecide: (id: string, d: Decision) => void; onAnswer: (id: string, a: string) => void }) {
+function ItemView({ item, onDecide, onAnswer }: { item: Item; onDecide: (id: string, d: Decision) => void; onAnswer: (id: string, a: string) => void }) {
   switch (item.kind) {
     case "user":
       return (
@@ -331,7 +318,7 @@ function ItemView({ item, rea, onDecide, onAnswer }: { item: Item; rea: boolean;
     case "assistant":
       return (
         <li className="fade-in flex gap-3">
-          <Avatar rea={rea} size={28} />
+          <Avatar size={28} />
           <div data-selectable className="min-w-0 flex-1 whitespace-pre-wrap pt-0.5 text-[14px] leading-relaxed text-ink">
             {item.text}
             {item.streaming && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-accent align-middle" aria-hidden />}
@@ -431,19 +418,5 @@ const LABELS: Record<string, string> = {
   "dn.read_pdf": "Reading a PDF",
   "dn.write_file": "Write a file",
 };
-export const label = (tool: string) => LABELS[tool] ?? (tool.startsWith("rea_") ? insightLabel(tool) : tool);
+export const label = (tool: string) => LABELS[tool] ?? tool;
 
-/** Plain-language step names for App Insights analysis tools. */
-function insightLabel(tool: string): string {
-  const name = tool.split(".").pop() ?? tool;
-  const rules: [RegExp, string][] = [
-    [/web_page|web_bundle|browser|web_session|web_network|capture_web/, "Analyzing the website"],
-    [/javascript|electron|bundle|script/, "Analyzing the app's code"],
-    [/artifact|desktop|binary|macho|bundle_resources|layout/, "Inspecting the app package"],
-    [/network|pcap|har/, "Reviewing network activity"],
-    [/analysis_view|evidence|session/, "Reviewing collected evidence"],
-    [/graph|feature|trace/, "Mapping how the feature works"],
-  ];
-  for (const [re, text] of rules) if (re.test(name)) return text;
-  return "Analyzing";
-}
