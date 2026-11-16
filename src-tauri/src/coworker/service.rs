@@ -61,6 +61,9 @@ pub struct Config {
     pub runner: Option<PathBuf>,
     /// Network endpoints for web and GitHub tools.
     pub web: super::web::WebConfig,
+    /// Appended to every tool description. `None` in the app; tests use it to
+    /// simulate an update that changes tool definitions.
+    pub tool_note: Option<String>,
 }
 
 pub struct Coworker {
@@ -462,29 +465,15 @@ impl Coworker {
     async fn ensure_engine(&self) -> Result<tokio::sync::MutexGuard<'_, Option<Engine>>, CoworkerError> {
         let mut guard = self.engine.lock().await;
         if guard.is_none() {
-            std::fs::create_dir_all(&self.cfg.state_dir).map_err(|e| CoworkerError::Setup(e.to_string()))?;
-            let mut b = Harness::builder()
-                .state_dir(self.cfg.state_dir.clone())
-                .sandbox(Sandbox::Off)
-                .persist_sessions(true)
-                // Summarise older history before the context window fills.
-                .compact_at_context_fraction(0.8);
-            if let Some(r) = &self.cfg.runner {
-                b = b.executable(r.clone());
-            }
-            let harness = b
-                .start()
-                .await
-                .map_err(|e| CoworkerError::Setup(format!("Sahayogi could not start: {e}")))?;
-            self.refresh_hints();
-            register_tools(
-                &harness,
-                self.ledger.clone(),
-                self.cfg.backup_dir.clone(),
-                self.translator.clone(),
-                self.cfg.web.clone(),
-            )
-            .await?;
+            let harness = match self.start_engine().await {
+                // The engine never lets a saved tool definition change. After an
+                // app update changed a tool, start from fresh engine state.
+                Err(e) if e.to_string().contains("tool definition changed") => {
+                    self.replace_engine_state()?;
+                    self.start_engine().await?
+                }
+                other => other?,
+            };
             *guard = Some(Engine {
                 harness,
                 connections: HashMap::new(),
@@ -493,6 +482,98 @@ impl Coworker {
             });
         }
         Ok(guard)
+    }
+
+    async fn start_engine(&self) -> Result<Harness, CoworkerError> {
+        std::fs::create_dir_all(&self.cfg.state_dir).map_err(|e| CoworkerError::Setup(e.to_string()))?;
+        let mut b = Harness::builder()
+            .state_dir(self.cfg.state_dir.clone())
+            .sandbox(Sandbox::Off)
+            .persist_sessions(true)
+            // Summarise older history before the context window fills.
+            .compact_at_context_fraction(0.8);
+        if let Some(r) = &self.cfg.runner {
+            b = b.executable(r.clone());
+        }
+        let harness = b
+            .start()
+            .await
+            .map_err(|e| CoworkerError::Setup(format!("Sahayogi could not start: {e}")))?;
+        self.refresh_hints();
+        if let Err(e) = register_tools(
+            &harness,
+            self.ledger.clone(),
+            self.cfg.backup_dir.clone(),
+            self.translator.clone(),
+            self.cfg.web.clone(),
+            self.cfg.tool_note.clone(),
+        )
+        .await
+        {
+            let _ = harness.shutdown().await;
+            return Err(e);
+        }
+        Ok(harness)
+    }
+
+    /// Move the engine's state aside (keeping the most recent copy) and mark
+    /// everything that depended on it. Messages, tasks and the audit log live
+    /// in DigitsNepal's own ledger and are kept.
+    fn replace_engine_state(&self) -> Result<(), CoworkerError> {
+        let dir = &self.cfg.state_dir;
+        let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("engine").to_string();
+        let parent = dir.parent().unwrap_or(dir);
+        if let Ok(rd) = std::fs::read_dir(parent) {
+            for e in rd.flatten() {
+                if e.file_name()
+                    .to_string_lossy()
+                    .starts_with(&format!("{name}-replaced-"))
+                {
+                    let _ = std::fs::remove_dir_all(e.path());
+                }
+            }
+        }
+        let backup = parent.join(format!("{name}-replaced-{}", super::ledger::now()));
+        if dir.exists() {
+            std::fs::rename(dir, &backup)
+                .map_err(|e| CoworkerError::Setup(format!("Could not update Sahayogi's engine data: {e}")))?;
+        }
+        let at = super::ledger::now();
+        self.ledger.kv_set("engine_reset_at", &at.to_string()).ok();
+        self.sessions.lock().unwrap().clear();
+        for p in self.ledger.unresolved_pending().unwrap_or_default() {
+            self.ledger.resolve_pending(&p.id, "expired").ok();
+        }
+        let why = "DigitsNepal was updated and this task can't continue. Its plan and results are kept; start it again as a new task.";
+        for t in self.ledger.tasks() {
+            if !super::tasks::transition(&self.ledger, &t, super::tasks::TaskState::Blocked, why)
+                && t.state == "BLOCKED"
+            {
+                // Already waiting: update the reason so the user sees why.
+                self.ledger.set_task_state(&t.id, "BLOCKED", "BLOCKED", why).ok();
+            }
+        }
+        self.ledger
+            .record(
+                "",
+                "system",
+                "engine",
+                "",
+                &Value::Null,
+                "replaced",
+                "Tool definitions changed after an update; engine state started fresh.",
+            )
+            .ok();
+        Ok(())
+    }
+
+    /// Conversations created before the engine state was replaced cannot be
+    /// continued (their engine sessions are gone).
+    fn predates_reset(&self, created_at: i64) -> bool {
+        self.ledger
+            .kv_get("engine_reset_at")
+            .and_then(|v| v.parse::<i64>().ok())
+            .is_some_and(|at| created_at < at)
     }
 
     pub async fn shutdown(&self) {
@@ -645,6 +726,11 @@ impl Coworker {
             .into_iter()
             .find(|r| r.id == id)
             .ok_or(CoworkerError::UnknownSession)?;
+        if self.predates_reset(row.created_at) {
+            return Err(CoworkerError::Setup(
+                "This conversation was started before DigitsNepal was updated and can't continue. Its messages are kept; start a new conversation.".into(),
+            ));
+        }
         {
             let mut guard = self.ensure_engine().await?;
             let engine = guard.as_mut().expect("engine started");
@@ -1108,6 +1194,7 @@ async fn register_tools(
     backups: PathBuf,
     translator: Arc<RwLock<Option<Arc<dyn Translator>>>>,
     web: super::web::WebConfig,
+    tool_note: Option<String>,
 ) -> Result<(), CoworkerError> {
     let mut by_ns: std::collections::BTreeMap<String, Vec<Tool>> = Default::default();
     let mut add = |qualified: &str, spec: &tools::ToolSpec| {
@@ -1117,8 +1204,12 @@ async fn register_tools(
         let backups = backups.clone();
         let translator = translator.clone();
         let web = web.clone();
+        let description = match &tool_note {
+            Some(n) => format!("{} {n}", spec.description),
+            None => spec.description.to_string(),
+        };
         let tool = Tool::new(short)
-            .description(spec.description)
+            .description(description)
             .input_schema(spec.input_schema.clone())
             .handler(move |args: Value, ctx| {
                 let deps = tools::Deps {

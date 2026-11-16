@@ -304,6 +304,7 @@ pub fn run() {
                         backup_dir: data.join("coworker").join("backups"),
                         runner: None,
                         web: Default::default(),
+                        tool_note: None,
                     },
                     sink,
                 );

@@ -194,6 +194,16 @@ actions it cannot perform). **Start task** creates a durable task:
 
 See `docs/architecture/AUTONOMOUS_AGENT.md` for the gap analysis.
 
+## App updates and engine state
+
+The agent engine never lets a saved tool definition change. When an update
+changes any tool's description or schema, DigitsNepal moves the old engine
+state aside (keeping the latest copy as `engine-replaced-<time>`) and starts
+fresh. Messages, tasks, approvals history and the audit log are kept in
+DigitsNepal's own ledger. Conversations started before the update show their
+messages but can't be continued; their open approvals expire; unfinished tasks
+become "waiting for you" with an explanation, so they can be started again.
+
 ## What runs automatically, what asks, what is refused
 
 | Action | Decision |

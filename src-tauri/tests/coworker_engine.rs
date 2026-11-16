@@ -177,6 +177,15 @@ async fn rig_web(
     dir: Option<tempfile::TempDir>,
     web: digitsnepal_lib::coworker::web::WebConfig,
 ) -> Option<Rig> {
+    rig_full(script, dir, web, None).await
+}
+
+async fn rig_full(
+    script: Script,
+    dir: Option<tempfile::TempDir>,
+    web: digitsnepal_lib::coworker::web::WebConfig,
+    tool_note: Option<String>,
+) -> Option<Rig> {
     let Some(runner) = runner() else {
         eprintln!("SKIPPED: set DN_HARNESS_RUNNER (scripts/build-harness-runner.sh)");
         return None;
@@ -203,6 +212,7 @@ async fn rig_web(
             backup_dir: dir.path().join("backups"),
             runner: Some(runner),
             web,
+            tool_note,
         },
         sink,
     );
@@ -1367,5 +1377,60 @@ async fn a_repeated_identical_write_is_not_performed_twice() {
         backups.is_empty(),
         "the second write never ran, so nothing was overwritten: {backups:?}"
     );
+    r.cw.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_update_that_changes_tool_definitions_starts_fresh_engine_state() {
+    let script: Script = Arc::new(|req| {
+        if last_is_user(req) && tool_results(req).is_empty() {
+            Reply::Tool {
+                name_suffix: "task__plan",
+                args: json!({"summary": "Write notes", "steps": [{"title": "Write"}]}),
+            }
+        } else {
+            Reply::Text("ok".into())
+        }
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let keep = dir.path().to_path_buf();
+    let Some(r) = rig(script.clone(), Some(dir)).await else {
+        return;
+    };
+    let s = r.cw.new_session(&r.spec).await.unwrap();
+    r.cw.send(&s.id, "hello", &r.spec).await.unwrap();
+    wait_for(&r.events, |v| v["type"] == "done").await;
+    let t =
+        r.cw.create_task(&r.spec, "write my notes", Some("general"))
+            .await
+            .unwrap();
+    wait_state(&r, &t.id, "BLOCKED").await; // stopped before task.complete
+    r.cw.shutdown().await;
+    let spec = r.spec.clone();
+    let Rig { _dir, .. } = r;
+
+    // The next version describes its tools differently.
+    let mut r = rig_full(
+        script,
+        Some(_dir),
+        digitsnepal_lib::coworker::web::WebConfig::default(),
+        Some("(v2)".into()),
+    )
+    .await
+    .unwrap();
+    r.spec = spec;
+    let fresh = r.cw.new_session(&r.spec).await.expect("new chats work after an update");
+    r.cw.send(&fresh.id, "hello again", &r.spec).await.unwrap();
+    wait_for(&r.events, |v| v["type"] == "done" && v["session"] == fresh.id.as_str()).await;
+    let old = r.cw.send(&s.id, "continue", &r.spec).await.unwrap_err().to_string();
+    assert!(old.contains("before DigitsNepal was updated"), "{old}");
+    assert!(r.cw.ledger.task(&t.id).unwrap().state_reason.contains("updated"));
+    assert_eq!(r.cw.ledger.messages(&s.id).unwrap().len(), 2, "old messages are kept");
+    let backups: Vec<_> = std::fs::read_dir(&keep)
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with("state-replaced-"))
+        .collect();
+    assert_eq!(backups.len(), 1, "previous engine state kept once");
     r.cw.shutdown().await;
 }
