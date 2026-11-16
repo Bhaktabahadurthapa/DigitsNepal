@@ -19,7 +19,7 @@ type Tab = "translate" | "coworker" | "rea" | "activity" | "explorer" | "history
 const TABS: { id: Tab; label: string; key: string }[] = [
   { id: "translate", label: "Translate", key: "1" },
   { id: "coworker", label: "Sahayogi", key: "2" },
-  { id: "rea", label: "REA Lab", key: "3" },
+  { id: "rea", label: "App Insights", key: "3" },
   { id: "activity", label: "Activity", key: "4" },
   { id: "explorer", label: "Word Explorer", key: "5" },
   { id: "history", label: "History", key: "6" },

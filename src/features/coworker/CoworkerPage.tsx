@@ -104,7 +104,7 @@ export function CoworkerPage({ onOpenSettings, start }: { onOpenSettings: () => 
     [active, newSession],
   );
 
-  // REA Lab and other screens can start a specialist conversation here.
+  // App Insights and other screens can start a specialist conversation here.
   const started = useRef(0);
   useEffect(() => {
     if (!start || started.current === start.n) return;
@@ -207,7 +207,7 @@ export function CoworkerPage({ onOpenSettings, start }: { onOpenSettings: () => 
           <div className="flex items-center gap-3">
             <Avatar rea={isRea} />
             <div>
-              <h1 className="text-[14px] font-semibold leading-tight">{isRea ? "REA Application Intelligence" : "Sahayogi"}</h1>
+              <h1 className="text-[14px] font-semibold leading-tight">{isRea ? "Sahayogi · App Insights" : "Sahayogi"}</h1>
               <p className="flex items-center gap-1.5 text-[11.5px] text-muted">
                 <span className={`h-1.5 w-1.5 rounded-full ${t.running ? "animate-pulse bg-accent" : status?.provider_ready ? "bg-ok" : "bg-warn-text"}`} aria-hidden />
                 {t.running ? "Working…" : status?.model ? status.model : "सहयोगी · your AI work assistant"}
@@ -431,4 +431,19 @@ const LABELS: Record<string, string> = {
   "dn.read_pdf": "Reading a PDF",
   "dn.write_file": "Write a file",
 };
-export const label = (tool: string) => LABELS[tool] ?? (tool.startsWith("rea_") ? `REA · ${(tool.split(".").pop() ?? tool).replaceAll("_", " ")}` : tool);
+export const label = (tool: string) => LABELS[tool] ?? (tool.startsWith("rea_") ? insightLabel(tool) : tool);
+
+/** Plain-language step names for App Insights analysis tools. */
+function insightLabel(tool: string): string {
+  const name = tool.split(".").pop() ?? tool;
+  const rules: [RegExp, string][] = [
+    [/web_page|web_bundle|browser|web_session|web_network|capture_web/, "Analyzing the website"],
+    [/javascript|electron|bundle|script/, "Analyzing the app's code"],
+    [/artifact|desktop|binary|macho|bundle_resources|layout/, "Inspecting the app package"],
+    [/network|pcap|har/, "Reviewing network activity"],
+    [/analysis_view|evidence|session/, "Reviewing collected evidence"],
+    [/graph|feature|trace/, "Mapping how the feature works"],
+  ];
+  for (const [re, text] of rules) if (re.test(name)) return text;
+  return "Analyzing";
+}

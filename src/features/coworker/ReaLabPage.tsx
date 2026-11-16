@@ -60,7 +60,7 @@ export function ReaLabPage({ onStart }: { onStart: (investigation: Investigation
         <div className="flex items-start gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent-fg" aria-hidden><ScanSearch size={22} /></div>
           <div>
-            <h1 className="text-[20px] font-semibold tracking-tight">REA Lab</h1>
+            <h1 className="text-[20px] font-semibold tracking-tight">App Insights</h1>
             <p className="mt-0.5 text-[13px] text-muted">Understand how software you own or are authorized to inspect works. Every finding comes with evidence and its limits.</p>
           </div>
         </div>
@@ -71,7 +71,7 @@ export function ReaLabPage({ onStart }: { onStart: (investigation: Investigation
             {!ready ? <Loader2 size={18} className="animate-spin" aria-hidden /> : ready.ready ? <CheckCircle2 size={18} aria-hidden /> : <TriangleAlert size={18} aria-hidden />}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[13.5px] font-semibold">{!ready ? "Checking REA…" : ready.ready ? `REA ${ready.rea_version} is ready` : "REA needs attention"}</p>
+            <p className="text-[13.5px] font-semibold">{!ready ? "Checking the analysis engine…" : ready.ready ? "App Insights is ready" : "App Insights needs a one-time setup"}</p>
             {ready?.ready && <p className="text-[12.5px] text-muted">Node {ready.node_version}</p>}
             {ready && !ready.ready && (
               <ul className="mt-1 space-y-1 text-[12.5px] text-muted">

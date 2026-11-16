@@ -193,14 +193,14 @@ pub fn readiness() -> (Readiness, Option<Installation>) {
     let mut problems = Vec::new();
     if supported.is_none() {
         problems.push(
-            "REA needs Node.js 22.23.4+, 24.22.1+ or 26.12.1+. Install a current Node.js from nodejs.org, then reopen DigitsNepal."
+            "App Insights needs Node.js 22.23.4+, 24.22.1+ or 26.12.1+. Install a current Node.js from nodejs.org, then reopen DigitsNepal."
                 .into(),
         );
     }
     match &rea {
-        None => problems.push("REA is not installed. In Terminal run: npm install -g rea-agents".into()),
+        None => problems.push("App Insights needs its analysis engine. In Terminal run: npm install -g rea-agents".into()),
         Some((_, v)) if !supports_scoping(v) => problems.push(format!(
-            "REA {v} cannot limit its tools to one investigation type. Update it in Terminal: npm install -g rea-agents@latest"
+            "The analysis engine ({v}) is too old for App Insights. Update it in Terminal: npm install -g rea-agents@latest"
         )),
         _ => {}
     }
@@ -255,7 +255,7 @@ pub fn discover_tools(inst: &Installation, families: &[&str], timeout: Duration)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| format!("Could not start REA: {e}"))?;
+        .map_err(|e| format!("Could not start the analysis engine: {e}"))?;
     let result = (|| {
         let mut stdin = child.stdin.take().ok_or("no stdin")?;
         let stdout = child.stdout.take().ok_or("no stdout")?;
@@ -276,16 +276,19 @@ pub fn discover_tools(inst: &Installation, families: &[&str], timeout: Duration)
             loop {
                 let left = deadline
                     .checked_duration_since(Instant::now())
-                    .ok_or("REA did not answer in time.")?;
+                    .ok_or("The analysis engine did not answer in time.")?;
                 let line = rx
                     .recv_timeout(left)
-                    .map_err(|_| "REA did not answer in time.".to_string())?;
+                    .map_err(|_| "The analysis engine did not answer in time.".to_string())?;
                 let Ok(v) = serde_json::from_str::<Value>(&line) else {
                     continue;
                 };
                 if v["id"] == json!(id) {
                     if let Some(err) = v.get("error") {
-                        return Err(format!("REA error: {}", err["message"].as_str().unwrap_or("unknown")));
+                        return Err(format!(
+                            "Analysis engine error: {}",
+                            err["message"].as_str().unwrap_or("unknown")
+                        ));
                     }
                     return Ok(v["result"].clone());
                 }

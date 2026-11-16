@@ -215,7 +215,7 @@ impl Coworker {
                 .map_err(CoworkerError::Setup)?;
                 if catalog.is_empty() {
                     return Err(CoworkerError::Setup(
-                        "REA reported no tools for this investigation type.".into(),
+                        "App Insights has no tools for this kind of investigation.".into(),
                     ));
                 }
                 // Engine MCP identities are immutable: version and scope are part of the name.
@@ -229,12 +229,12 @@ impl Coworker {
                         .harness
                         .start_mcp_server(McpServer::stdio(ns.clone(), program, args))
                         .await
-                        .map_err(|e| CoworkerError::Setup(format!("Could not start REA: {e}")))?;
+                        .map_err(|e| CoworkerError::Setup(format!("Could not start App Insights: {e}")))?;
                 }
                 self.hints.write().unwrap().extend(rea::hints_for(&ns, &catalog));
                 let mut tools: Vec<String> = catalog.iter().map(|t| format!("{ns}.{}", t.name)).collect();
                 tools.push("dn.understand_text".into());
-                ("REA Application Intelligence", specialists::REA_INSTRUCTIONS, tools)
+                ("Sahayogi App Insights", specialists::REA_INSTRUCTIONS, tools)
             }
         };
         let digest = super::ledger::sha256_hex(

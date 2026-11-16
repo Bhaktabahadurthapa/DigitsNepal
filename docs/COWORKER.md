@@ -3,12 +3,14 @@
 Sahayogi is the AI work assistant inside the DigitsNepal Mac app. You can ask it for work in
 Romanized Nepali, Devanagari or English, and it works only in folders you
 grant. It can also investigate websites and apps you are authorized to inspect,
-using [REA](https://github.com/morluto/rea).
+through **App Insights**. App Insights runs on the open-source
+[REA](https://github.com/morluto/rea) engine (MIT) behind the scenes; the
+product never shows the engine's name.
 
 ## Architecture
 
 ```
-React UI: Sahayogi · REA Lab · Activity
+React UI: Sahayogi · App Insights · Activity
         │  Tauri commands + "coworker:event" stream
 Rust  ──┼─ coworker::service ── OpenWorker Harness SDK (embedded, pinned commit, MIT)
         │      every tool call pauses (Approvals::Always) → coworker::policy decides
@@ -49,11 +51,11 @@ SHA-256 fingerprint of its arguments. File contents are not stored. Each entry
 includes the hash of the previous one, so editing or deleting an entry fails
 the integrity check shown on the Activity screen.
 
-## REA Lab
+## App Insights (engine: REA)
 
 1. Install REA 6.8.0 or newer (`npm install -g rea-agents@latest`) and Node.js 22.23.4+, 24.22.1+ or 26.12.1+.
-2. In REA Lab, choose a type (Website, JavaScript/Electron app, or Desktop app), enter the target, and state your authorization.
-3. DigitsNepal starts the official `rea mcp` server, limited to that type's tool families, reads its live tool catalog, and starts the REA specialist.
+2. In App Insights, choose a type (Website, JavaScript/Electron app, or Desktop app), enter the target, and state your authorization.
+3. DigitsNepal starts the official `rea mcp` server, limited to that type's tool families, reads its live tool catalog, and starts the App Insights specialist.
 
 REA versions before 6.8.0 ignore the family scope and expose about 200 tools, so DigitsNepal refuses them.
 
@@ -77,8 +79,8 @@ so they make no paid API calls.
 
 ## Known limitations (MVP)
 
-- Specialists: General and REA only. Browser automation, terminal, automations, voice and iPhone are later phases.
-- The REA website workflow is implemented, but it has not been run end to end on this machine because the installed REA is 6.7.0 (it needs 6.8.0 or newer).
+- Specialists: General and App Insights only. Browser automation, terminal, automations, voice and iPhone are later phases.
+- The App Insights website workflow is implemented, but it has not been run end to end on this machine because the installed REA is 6.7.0 (it needs 6.8.0 or newer).
 - The coworker has not been tried with a live cloud model yet: all engine tests use a scripted local model.
 - OpenWorker's Harness SDK is beta (0.1.0-beta.2) and pinned to commit `ecb4454`. Upgrades need re-testing.
 - The engine runner adds about 25 MB to the app.

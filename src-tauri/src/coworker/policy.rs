@@ -139,16 +139,17 @@ pub fn evaluate(tool: &str, args: &Value, cx: &Context) -> Decision {
         let hints = cx.hints.get(tool).copied().unwrap_or_default();
         if hints.destructive || REA_RUNTIME_WORDS.iter().any(|w| short.contains(w)) {
             return Decision::Ask {
-                reason: "This REA step runs, drives or changes the target. It needs your approval every time.".into(),
+                reason: "This step runs, drives or changes the app or website. It needs your approval every time."
+                    .into(),
                 standing_ok: false,
                 hard_floor: true,
             };
         }
         if hints.read_only {
-            return allow("Read-only REA analysis of a target you authorized.");
+            return allow("Read-only analysis of an app or website you authorized.");
         }
         return Decision::Ask {
-            reason: "REA analysis step on an authorized target.".into(),
+            reason: "Analysis step on an app or website you authorized.".into(),
             standing_ok: false,
             hard_floor: false,
         };
@@ -204,7 +205,7 @@ pub fn targets_authorized(args: &Value, targets: &[Target]) -> Result<(), String
                     .any(|t| t.kind == TargetKind::Origin && t.value == origin);
             if !ok {
                 return Err(format!(
-                    "{origin} is not an authorized target. Add it in REA Lab first."
+                    "{origin} is not an authorized target. Add it in App Insights first."
                 ));
             }
         } else if looks_like_local_path(s) {
@@ -214,7 +215,7 @@ pub fn targets_authorized(args: &Value, targets: &[Target]) -> Result<(), String
                 .any(|t| t.kind == TargetKind::Path && real.starts_with(&t.value));
             if !ok {
                 return Err(format!(
-                    "{} is not an authorized target. Add it in REA Lab first.",
+                    "{} is not an authorized target. Add it in App Insights first.",
                     real.display()
                 ));
             }
