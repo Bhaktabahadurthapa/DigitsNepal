@@ -80,6 +80,8 @@ pub struct Coworker {
     recovered: std::sync::atomic::AtomicBool,
     /// Sessions with a turn in progress (one run per conversation at a time).
     running: Mutex<HashSet<String>>,
+    /// Free-text answers to option questions, delivered as the next message.
+    followups: Mutex<HashMap<String, String>>,
 }
 
 #[derive(Debug)]
@@ -137,6 +139,7 @@ impl Coworker {
             active: std::sync::atomic::AtomicUsize::new(0),
             recovered: std::sync::atomic::AtomicBool::new(false),
             running: Mutex::new(HashSet::new()),
+            followups: Mutex::new(HashMap::new()),
         })
     }
 
@@ -865,6 +868,9 @@ impl Coworker {
             match me.drive(&sid, &session, Some(&input)).await {
                 Ok(()) => {}
                 Err(e) => {
+                    // Never leave a half-finished engine run behind: it would
+                    // block every later message in this conversation.
+                    let _ = session.cancel().await;
                     me.emit(&sid, "error", json!({"message": e.to_string()}));
                     me.ledger
                         .record(&sid, "system", "error", "", &Value::Null, "failed", &e.to_string())
@@ -907,12 +913,29 @@ impl Coworker {
         tokio::spawn(async move {
             me.emit(&sid, "status", json!({"state": "running"}));
             if let Err(e) = me.drive(&sid, &session, None).await {
+                let _ = session.cancel().await;
                 me.emit(&sid, "error", json!({"message": e.to_string()}));
             }
             me.running.lock().unwrap().remove(&sid);
             me.emit(&sid, "status", json!({"state": "idle"}));
         });
         Ok(true)
+    }
+
+    /// Start a run right after cancelling one; the engine may need a moment
+    /// to settle the cancelled run.
+    async fn run_after_cancel(&self, session: &Session, text: &str) -> Result<RunStream, CoworkerError> {
+        let mut last = None;
+        for _ in 0..20 {
+            match session.run_streamed(text).await {
+                Ok(s) => return Ok(s),
+                Err(e) => {
+                    last = Some(e);
+                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                }
+            }
+        }
+        Err(engine_err(last.expect("at least one attempt")))
     }
 
     async fn drive(&self, sid: &str, session: &Session, input: Option<&str>) -> Result<(), CoworkerError> {
@@ -962,7 +985,17 @@ impl Coworker {
                     for i in &result.interruptions {
                         self.resolve(sid, session, i).await?;
                     }
-                    stream = session.resume_streamed().await.map_err(engine_err)?;
+                    let followup = self.followups.lock().unwrap().remove(sid);
+                    stream = match followup {
+                        // A free-text answer: close the open question and
+                        // continue with the user's words as a new message.
+                        Some(text) => {
+                            let _ = session.cancel().await;
+                            self.ledger.add_message(sid, "user", &text).ok();
+                            self.run_after_cancel(session, &text).await?
+                        }
+                        None => session.resume_streamed().await.map_err(engine_err)?,
+                    };
                 }
             }
         }
@@ -1158,7 +1191,27 @@ impl Coworker {
                     .record(sid, "user", "answer", "", &json!(answer), "answered", "")
                     .ok();
                 self.task_event(sid, TaskSignal::Answered);
-                session.respond(i, Response::Answer(answer)).await.map_err(engine_err)
+                // The engine accepts only an offered option when options exist.
+                // Match ignoring case and spacing; anything else is the user's
+                // own words, delivered as their next message instead.
+                let chosen = if options.is_empty() {
+                    Some(answer.clone())
+                } else {
+                    options
+                        .iter()
+                        .find(|o| o.trim().eq_ignore_ascii_case(answer.trim()))
+                        .cloned()
+                };
+                match chosen {
+                    Some(a) => session.respond(i, Response::Answer(a)).await.map_err(engine_err),
+                    None => {
+                        self.followups.lock().unwrap().insert(
+                            sid.to_string(),
+                            format!("My answer to your question \"{question}\": {answer}"),
+                        );
+                        Ok(())
+                    }
+                }
             }
             other => Err(CoworkerError::Engine(format!(
                 "The engine paused for a safety check: {other:?}"

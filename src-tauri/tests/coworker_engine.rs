@@ -1526,3 +1526,49 @@ async fn resume_while_a_question_is_open_does_not_break_the_task() {
     wait_state(&r, &t.id, "COMPLETED").await;
     r.cw.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_typed_answer_to_a_multiple_choice_question_is_accepted() {
+    let script: Script = Arc::new(|req| {
+        let last_user = req["messages"]
+            .as_array()
+            .and_then(|m| m.last())
+            .filter(|m| m["role"] == "user")
+            .map(|m| m["content"].to_string())
+            .unwrap_or_default();
+        if last_user.contains("My answer to your question") {
+            assert!(last_user.contains("Pokhara, near Lakeside"), "{last_user}");
+            return Reply::Tool {
+                name_suffix: "task__complete",
+                args: json!({"outcome": "completed", "summary": "Searched near Lakeside, Pokhara."}),
+            };
+        }
+        match tool_results(req).len() {
+            0 => Reply::Tool {
+                name_suffix: "task__plan",
+                args: json!({"summary": "Find jobs", "steps": [{"title": "Ask location"}]}),
+            },
+            1 => Reply::Tool {
+                name_suffix: "ask_user",
+                args: json!({"question": "Where are you based?", "options": ["Kathmandu", "Lalitpur"]}),
+            },
+            _ => Reply::Text("Done.".into()),
+        }
+    });
+    let Some(r) = rig(script, None).await else { return };
+    let t =
+        r.cw.create_task(
+            &r.spec,
+            "malai mero location ma Cloud DevOps job search gara",
+            Some("general"),
+            false,
+        )
+        .await
+        .unwrap();
+    let q = wait_for(&r.events, |v| v["type"] == "question").await;
+    // Not one of the options: before the fix the engine rejected this and the task failed.
+    assert!(r.cw.answer(q["id"].as_str().unwrap(), "Pokhara, near Lakeside"));
+    wait_state(&r, &t.id, "COMPLETED").await;
+    // Matching an option ignores case.
+    r.cw.shutdown().await;
+}
