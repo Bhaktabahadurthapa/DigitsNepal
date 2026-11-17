@@ -446,7 +446,13 @@ h2 { font-size: clamp(38px, 5.2vw, 64px); line-height: 0.98; }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
 .facts code, .verify code, .prose code { font: 400 13px var(--mono); background: var(--paper-2); padding: 1px 6px; border-radius: 3px; }
 .sha { display: flex; gap: 10px; align-items: flex-start; }
-.sha code { font-size: 12px; line-height: 1.6; }
+.sha code { font-size: 12px; line-height: 1.6; min-width: 0; overflow-wrap: anywhere; word-break: break-all; }
+.rel-verify { margin: 4px 0 22px; border: 1px solid var(--rule-strong); border-radius: 3px; padding: 10px 14px; }
+.rel-verify summary { cursor: pointer; font: 500 14px var(--mono); color: var(--ink-2); }
+.rel-verify summary span { color: var(--ink-3); font-weight: 400; }
+.rel-verify[open] summary { margin-bottom: 8px; }
+.rel-verify p { margin: 8px 0; font-size: 15px; }
+.rel-verify .verify { margin-top: 10px; }
 .copy { flex: none; font: 500 12px var(--mono); background: none; border: 1px solid var(--rule-strong); color: var(--ink); padding: 3px 10px 2px; border-radius: 2px; cursor: pointer; }
 .copy:hover { background: var(--ink); color: var(--paper-3); }
 .verify { margin: 18px 0 0; font-size: 14px; color: var(--ink-3); overflow-wrap: anywhere; }

@@ -29,7 +29,7 @@ $sha = release_sha256($release);
       <div><dt>SHA-256</dt><dd class="sha"><code id="sha"><?= e($sha) ?></code> <button type="button" class="copy" data-copy="#sha">Copy</button></dd></div>
       <?php endif; ?>
     </dl>
-    <p class="verify">Verify in Terminal: <code>shasum -a 256 ~/Downloads/<?= e($dmg['name']) ?></code></p>
+    <p class="verify">Optional check: run <code>shasum -a 256 ~/Downloads/<?= e($dmg['name']) ?></code> in Terminal. If it prints the same SHA-256 as above, your download is complete and unchanged.</p>
   </article>
 
   <aside class="side-notes rise" style="--d:4">
