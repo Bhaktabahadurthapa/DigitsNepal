@@ -64,6 +64,13 @@ export function SettingsPage({ settings, update, error }: { settings: Settings |
             To revoke, remove DigitsNepal from System Settings › Privacy & Security › Accessibility. To reset it from Terminal: <code>tccutil reset Accessibility org.digitsnepal.app</code>
           </Notice>
           <Toggle
+            checked={s.typing_button}
+            disabled={!status?.accessibility_trusted}
+            onChange={(v) => update({ typing_button: v })}
+            label="Show the DigitsNepal button while typing"
+            description="When you type Nepali or Romanized Nepali in a text box in any app, a small अ button appears beside it. Click it to see the English and put it straight into that app (Replace), without opening DigitsNepal. Password fields are never touched; the text is checked on your Mac and only sent for translation when you click."
+          />
+          <Toggle
             checked={s.clipboard_fallback}
             onChange={(v) => update({ clipboard_fallback: v })}
             label="Offer clipboard fallback"

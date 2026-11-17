@@ -99,6 +99,7 @@ export interface Settings {
   hide_from_capture: boolean;
   window_opacity: number;
   paused: boolean;
+  typing_button: boolean;
   onboarding_done: boolean;
 }
 

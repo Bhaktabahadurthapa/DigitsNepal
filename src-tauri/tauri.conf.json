@@ -38,6 +38,23 @@
         "center": true,
         "focus": true,
         "transparent": true
+      },
+      {
+        "label": "bubble",
+        "title": "DigitsNepal",
+        "url": "index.html?view=bubble",
+        "width": 34,
+        "height": 34,
+        "resizable": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "focus": false,
+        "transparent": true,
+        "shadow": false,
+        "visibleOnAllWorkspaces": true,
+        "acceptFirstMouse": true
       }
     ],
     "security": {

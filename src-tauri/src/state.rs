@@ -22,6 +22,8 @@ pub struct AppState {
     pub settings_store: SettingsStore,
     pub history: Mutex<HistoryStore>,
     pub capture: Mutex<Option<Capture>>,
+    /// The field the typing button is currently shown for.
+    pub typing_target: Mutex<Option<crate::accessibility::Target>>,
     pub last_replacement: Mutex<Option<Replacement>>,
     pub pending: Mutex<PendingCapture>,
     pub seq: Mutex<u64>,

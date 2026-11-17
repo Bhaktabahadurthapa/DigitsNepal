@@ -36,6 +36,9 @@ pub struct Settings {
     pub window_opacity: u8,
     /// Pause all shortcut-driven features (menu bar toggle).
     pub paused: bool,
+    /// Show the DigitsNepal button next to text fields in other apps while
+    /// typing Nepali. Off by default (it checks the focused field locally).
+    pub typing_button: bool,
     pub onboarding_done: bool,
 }
 
@@ -61,6 +64,7 @@ impl Default for Settings {
             hide_from_capture: false,
             window_opacity: 100,
             paused: false,
+            typing_button: false,
             onboarding_done: false,
         }
     }

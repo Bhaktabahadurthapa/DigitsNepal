@@ -31,3 +31,15 @@ Limitations: this is a request to macOS, not a guarantee. Some capture tools, or
 * API keys: Settings › AI provider › Remove. Or delete the `org.digitsnepal.app` items in Keychain Access.
 * History: History › Clear all… deletes the file.
 * Everything: quit the app and delete `~/Library/Application Support/org.digitsnepal.app`.
+
+## Typing button (off by default)
+
+With **Settings › Show the DigitsNepal button while typing** turned on,
+DigitsNepal checks the focused text field in other apps a few times a second
+(through macOS Accessibility): its type, its position, and the last 400
+characters of its text, only to decide locally whether you are typing Nepali.
+Password and secure fields are skipped, and nothing is checked while
+DigitsNepal is paused. This text is not stored, logged or sent anywhere.
+Only when you click the button is the field's text translated (by the provider
+you chose), and it is replaced in the other app only when you press Replace,
+with Undo available. Turning the setting off stops the checks immediately.

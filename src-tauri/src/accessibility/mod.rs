@@ -1,8 +1,14 @@
-//! Selected-text access in other apps through the macOS Accessibility API.
+//! Text access in other apps through the macOS Accessibility API.
 //!
-//! Only the focused element's *selected* text is read, and only when the
-//! user presses the DigitsNepal shortcut. Nothing is read in the background,
-//! no keystrokes are observed, and secure (password) input is refused.
+//! * Shortcut / typing button: the focused field's *selected* text is read
+//!   (or, when nothing is selected, the whole field, which is then selected
+//!   so the user sees exactly what will be replaced).
+//! * Typing button (opt-in setting, off by default): while it is on, the
+//!   focused text field's role, position and the end of its text are checked
+//!   locally a few times a second to decide whether to show the button.
+//!   Nothing is stored or sent until the user clicks it.
+//!
+//! No keystrokes are observed, and secure (password) input is refused.
 
 pub mod safety;
 pub use safety::TextAccessError;
@@ -27,10 +33,21 @@ pub struct Replacement {
     element: mac::Element,
 }
 
+/// A text field the user is typing in, in another app (for the typing button).
+pub struct Target {
+    pub pid: i32,
+    /// Screen frame in points: x, y (top-left), width, height.
+    pub frame: (f64, f64, f64, f64),
+    /// The last part of the field's text, for local language detection only.
+    pub tail: String,
+    #[cfg(target_os = "macos")]
+    element: mac::Element,
+}
+
 #[cfg(target_os = "macos")]
 mod mac {
     use super::safety::*;
-    use super::{Capture, Replacement};
+    use super::{Capture, Replacement, Target};
     use accessibility_sys::*;
     use core_foundation::base::{CFRelease, CFRetain, CFTypeRef, TCFType};
     use core_foundation::boolean::CFBoolean;
@@ -192,20 +209,104 @@ mod mac {
             return Err(TextAccessError::SecureInput);
         }
         let el = focused_element()?;
-        if is_secure(&el) {
-            return Err(TextAccessError::SecureInput);
-        }
         let mut pid = 0;
         unsafe { AXUIElementGetPid(el.0, &mut pid) };
         if pid == std::process::id() as i32 {
             // Our own window is focused; nothing to capture from another app.
             return Err(TextAccessError::NoSelection);
         }
-        let text = accept_selection(string_attr(el.0, "AXSelectedText"))?;
-        Ok(Capture {
-            text,
+        capture_from(el, pid)
+    }
+
+    /// Capture from the field the typing button was shown for.
+    pub fn capture_target(t: &Target) -> Result<Capture, TextAccessError> {
+        if !is_trusted(false) {
+            return Err(TextAccessError::PermissionRequired);
+        }
+        if secure_input_active() {
+            return Err(TextAccessError::SecureInput);
+        }
+        capture_from(t.element.clone_ref(), t.pid)
+    }
+
+    /// The selection, or (if nothing is selected) the whole field, selected
+    /// first so replacing goes through the same safety checks.
+    fn capture_from(el: Element, pid: i32) -> Result<Capture, TextAccessError> {
+        if is_secure(&el) {
+            return Err(TextAccessError::SecureInput);
+        }
+        match accept_selection(string_attr(el.0, "AXSelectedText")) {
+            Ok(text) => Ok(Capture {
+                text,
+                pid,
+                range: range_attr(el.0),
+                element: el,
+            }),
+            Err(TextAccessError::NoSelection) => {
+                let value = string_attr(el.0, "AXValue").ok_or(TextAccessError::NoSelection)?;
+                let text = accept_selection(Some(value.clone()))?;
+                if value.chars().count() > 4000 {
+                    return Err(TextAccessError::NoSelection);
+                }
+                let len = utf16_len(&value);
+                if !set_range(el.0, 0, len) || string_attr(el.0, "AXSelectedText").as_deref() != Some(value.as_str()) {
+                    return Err(TextAccessError::Unsupported);
+                }
+                Ok(Capture {
+                    text,
+                    pid,
+                    range: Some((0, len)),
+                    element: el,
+                })
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Default)]
+    struct Pt {
+        x: f64,
+        y: f64,
+    }
+
+    fn point_attr(el: AXUIElementRef, name: &str, kind: AXValueType) -> Option<(f64, f64)> {
+        let v = attr(el, name)?;
+        let mut p = Pt::default();
+        let ok = unsafe { AXValueGetValue(v as AXValueRef, kind, &mut p as *mut _ as *mut c_void) };
+        unsafe { CFRelease(v) };
+        ok.then_some((p.x, p.y))
+    }
+
+    const TEXT_ROLES: &[&str] = &["AXTextField", "AXTextArea", "AXComboBox"];
+
+    /// The focused, non-secure text field in another app, if any.
+    pub fn typing_target() -> Option<Target> {
+        if !is_trusted(false) || secure_input_active() {
+            return None;
+        }
+        let el = focused_element().ok()?;
+        let mut pid = 0;
+        unsafe { AXUIElementGetPid(el.0, &mut pid) };
+        if pid == 0 || pid == std::process::id() as i32 || is_secure(&el) {
+            return None;
+        }
+        let role = string_attr(el.0, "AXRole")?;
+        if !TEXT_ROLES.contains(&role.as_str()) {
+            return None;
+        }
+        let value = string_attr(el.0, "AXValue")?;
+        if value.trim().is_empty() {
+            return None;
+        }
+        let chars: Vec<char> = value.chars().collect();
+        let tail: String = chars[chars.len().saturating_sub(400)..].iter().collect();
+        let (x, y) = point_attr(el.0, "AXPosition", kAXValueTypeCGPoint)?;
+        let (w, h) = point_attr(el.0, "AXSize", kAXValueTypeCGSize)?;
+        Some(Target {
             pid,
-            range: range_attr(el.0),
+            frame: (x, y, w, h),
+            tail,
             element: el,
         })
     }
@@ -271,7 +372,7 @@ mod mac {
 }
 
 #[cfg(target_os = "macos")]
-pub use mac::{activate, capture, is_trusted, replace, secure_input_active, undo};
+pub use mac::{activate, capture, capture_target, is_trusted, replace, secure_input_active, typing_target, undo};
 
 #[cfg(not(target_os = "macos"))]
 mod other {
@@ -284,6 +385,12 @@ mod other {
     }
     pub fn capture() -> Result<Capture, TextAccessError> {
         Err(TextAccessError::NotMacOs)
+    }
+    pub fn capture_target(_: &Target) -> Result<Capture, TextAccessError> {
+        Err(TextAccessError::NotMacOs)
+    }
+    pub fn typing_target() -> Option<Target> {
+        None
     }
     pub fn activate(_: i32) {}
     pub fn replace(_: &Capture, _: &str) -> Result<Replacement, TextAccessError> {

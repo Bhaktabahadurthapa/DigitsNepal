@@ -19,6 +19,7 @@ export const demoSettings: Settings = {
   hide_from_capture: false,
   window_opacity: 100,
   paused: false,
+  typing_button: false,
   onboarding_done: true,
 };
 

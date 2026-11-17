@@ -72,7 +72,94 @@ fn on_shortcut(app: &AppHandle) {
     if state.settings.lock().unwrap().paused {
         return;
     }
-    match accessibility::capture() {
+    show_capture(app, accessibility::capture());
+}
+
+/// The typing button was clicked: translate the field it was shown for.
+#[tauri::command]
+fn typing_button_clicked(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("bubble") {
+        let _ = w.hide();
+    }
+    let state = app.state::<AppState>();
+    let result = match state.typing_target.lock().unwrap().as_ref() {
+        Some(t) => accessibility::capture_target(t),
+        None => Err(accessibility::TextAccessError::NoCapture),
+    };
+    show_capture(&app, result);
+}
+
+/// Watches the focused text field (only while the setting is on) and shows
+/// the small DigitsNepal button next to it when the text looks Nepali. The
+/// text is checked locally and never stored or sent.
+fn start_typing_watcher(app: AppHandle) {
+    use crate::translation::types::DetectedLanguage::*;
+    std::thread::spawn(move || {
+        let mut shown = false;
+        let mut last: Option<(f64, f64)> = None;
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(350));
+            let state = app.state::<AppState>();
+            let (on, paused) = {
+                let s = state.settings.lock().unwrap();
+                (s.typing_button, s.paused)
+            };
+            let target = if on && !paused {
+                accessibility::typing_target()
+            } else {
+                None
+            };
+            let nepali = target.as_ref().is_some_and(|t| {
+                matches!(
+                    crate::translation::detect::detect(&t.tail).language,
+                    RomanizedNepali | NativeNepali | Mixed
+                )
+            });
+            let Some(w) = app.get_webview_window("bubble") else {
+                continue;
+            };
+            match target.filter(|_| nepali) {
+                Some(t) => {
+                    let (fx, fy, fw, fh) = t.frame;
+                    // Inside the bottom-right corner of tall fields; just
+                    // below the right end of single-line fields.
+                    let (mut x, mut y) = if fh > 60.0 {
+                        (fx + fw - 40.0, fy + fh - 40.0)
+                    } else {
+                        (fx + fw - 34.0, fy + fh + 4.0)
+                    };
+                    if let Ok(Some(m)) = w.current_monitor().or_else(|_| w.primary_monitor()) {
+                        let size = m.size().to_logical::<f64>(m.scale_factor());
+                        let pos = m.position().to_logical::<f64>(m.scale_factor());
+                        if y + 36.0 > pos.y + size.height {
+                            y = fy - 38.0;
+                        }
+                        x = x.clamp(pos.x, pos.x + size.width - 36.0);
+                    }
+                    if last.is_none_or(|(lx, ly)| (lx - x).abs() > 1.0 || (ly - y).abs() > 1.0) {
+                        let _ = w.set_position(tauri::LogicalPosition::new(x, y));
+                        last = Some((x, y));
+                    }
+                    *state.typing_target.lock().unwrap() = Some(t);
+                    if !shown {
+                        let _ = w.show();
+                        shown = true;
+                    }
+                }
+                None => {
+                    if shown {
+                        let _ = w.hide();
+                        shown = false;
+                    }
+                }
+            }
+        }
+    });
+}
+
+fn show_capture(app: &AppHandle, result: Result<accessibility::Capture, accessibility::TextAccessError>) {
+    let state = app.state::<AppState>();
+    match result {
         Ok(cap) => {
             let text = cap.text.clone();
             *state.capture.lock().unwrap() = Some(cap);
@@ -279,6 +366,7 @@ pub fn run() {
                 settings_store: store,
                 history: Mutex::new(HistoryStore::open(&data)),
                 capture: Mutex::new(None),
+                typing_target: Mutex::new(None),
                 last_replacement: Mutex::new(None),
                 pending: Mutex::new(PendingCapture::default()),
                 seq: Mutex::new(0),
@@ -315,6 +403,7 @@ pub fn run() {
             }
 
             let handle = app.handle().clone();
+            start_typing_watcher(handle.clone());
             apply_window_prefs(&handle, &settings);
             if let Err(e) = register_shortcut(&handle, &settings) {
                 log::warn!("{e}");
@@ -343,6 +432,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            typing_button_clicked,
             commands::translate,
             commands::detect_language,
             commands::dictionary_gloss,
