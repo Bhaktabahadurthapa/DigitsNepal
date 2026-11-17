@@ -48,3 +48,18 @@ Semantic versioning. Bump `version` in `package.json`, `src-tauri/Cargo.toml` an
 A dynamic PHP site in `website/`, hosted on Hostinger. The Download and Changelog pages read GitHub Releases themselves, so **publishing a GitHub release updates the website automatically** (within an hour). There's no need to edit links.
 
 If you change the site's code, see `website/README.md` for the zip-and-extract deploy.
+
+## Local signing (development builds)
+
+Unsigned (ad-hoc) builds get a new identity every time, so macOS forgets the
+Accessibility permission after each rebuild. For local development, create a
+self-signed code-signing certificate once and sign every build with it:
+
+1. Create it (Keychain Access › Certificate Assistant › Create a Certificate…,
+   name **DigitsNepal Local Signing**, type *Code Signing*), or with `openssl`
+   + `security import … -T /usr/bin/codesign`.
+2. Build, sign, install and relaunch with `scripts/install-local.sh`.
+3. Grant Accessibility once; it now survives rebuilds.
+
+This certificate is only for your own Mac. Public releases still need a
+Developer ID certificate and notarization (above).
