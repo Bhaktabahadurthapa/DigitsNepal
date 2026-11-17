@@ -39,6 +39,10 @@ pub struct Settings {
     /// Show the DigitsNepal button next to text fields in other apps while
     /// typing Nepali. Off by default (it checks the focused field locally).
     pub typing_button: bool,
+    /// One step: the अ button and the shortcut translate the text and put
+    /// the English straight back into the app, without the preview window.
+    /// Falls back to the preview if anything goes wrong. Off by default.
+    pub instant_replace: bool,
     pub onboarding_done: bool,
 }
 
@@ -65,6 +69,7 @@ impl Default for Settings {
             window_opacity: 100,
             paused: false,
             typing_button: false,
+            instant_replace: false,
             onboarding_done: false,
         }
     }

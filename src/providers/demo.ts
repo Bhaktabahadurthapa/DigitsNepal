@@ -20,6 +20,7 @@ export const demoSettings: Settings = {
   window_opacity: 100,
   paused: false,
   typing_button: false,
+  instant_replace: false,
   onboarding_done: true,
 };
 

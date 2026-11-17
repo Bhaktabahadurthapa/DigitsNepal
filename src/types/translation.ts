@@ -100,6 +100,7 @@ export interface Settings {
   window_opacity: number;
   paused: boolean;
   typing_button: boolean;
+  instant_replace: boolean;
   onboarding_done: boolean;
 }
 

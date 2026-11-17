@@ -72,7 +72,62 @@ fn on_shortcut(app: &AppHandle) {
     if state.settings.lock().unwrap().paused {
         return;
     }
-    show_capture(app, accessibility::capture());
+    let result = accessibility::capture();
+    if instant(app) {
+        if let Ok(cap) = result {
+            instant_replace(app.clone(), cap);
+            return;
+        }
+    }
+    show_capture(app, result);
+}
+
+fn instant(app: &AppHandle) -> bool {
+    app.state::<AppState>().settings.lock().unwrap().instant_replace
+}
+
+/// One-step mode: translate the captured text and write the English straight
+/// back into the other app. Nothing is replaced unless the text there is still
+/// exactly what was captured; on any problem the normal preview opens instead.
+fn instant_replace(app: AppHandle, cap: accessibility::Capture) {
+    tauri::async_runtime::spawn(async move {
+        let _ = app.emit_to("bubble", "bubble:busy", true);
+        let state = app.state::<AppState>();
+        let settings = state.settings.lock().unwrap().clone();
+        let req = translation::types::TranslateRequest {
+            text: cap.text.clone(),
+            mode: TranslationMode::Accurate,
+            include_word_meanings: false,
+        };
+        let english = match commands::build_provider(&state, &settings, &settings.provider) {
+            Ok(p) => translation::engine::translate(p.as_ref(), &req, &Default::default())
+                .await
+                .map(|r| r.accurate_english)
+                .map_err(|e| e.to_string()),
+            Err(e) => Err(e.message.clone()),
+        };
+        let _ = app.emit_to("bubble", "bubble:busy", false);
+        let english = match english {
+            Ok(t) if !t.trim().is_empty() => t,
+            Ok(_) | Err(_) => {
+                // Show the preview so the user sees the reason and can retry.
+                show_capture(&app, Ok(cap));
+                return;
+            }
+        };
+        accessibility::activate(cap.pid);
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+        match accessibility::replace(&cap, &english) {
+            Ok(rep) => {
+                *state.last_replacement.lock().unwrap() = Some(rep);
+                refresh_tray(&app);
+            }
+            Err(e) => {
+                log::warn!("instant replace skipped: {e}");
+                show_capture(&app, Ok(cap));
+            }
+        }
+    });
 }
 
 /// The typing button was clicked: translate the field it was shown for.
@@ -86,6 +141,12 @@ fn typing_button_clicked(app: AppHandle) {
         Some(t) => accessibility::capture_target(t),
         None => Err(accessibility::TextAccessError::NoCapture),
     };
+    if instant(&app) {
+        if let Ok(cap) = result {
+            instant_replace(app.clone(), cap);
+            return;
+        }
+    }
     show_capture(&app, result);
 }
 
