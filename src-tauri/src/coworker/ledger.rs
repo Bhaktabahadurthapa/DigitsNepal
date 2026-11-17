@@ -117,6 +117,10 @@ pub struct Security {
     /// without asking. Off by default; never covers writes or sending.
     #[serde(default)]
     pub auto_web: bool,
+    /// Creating, saving and moving files inside shared folders runs without
+    /// asking (existing files are still backed up; nothing is deleted).
+    #[serde(default)]
+    pub auto_files: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -492,6 +496,7 @@ impl Ledger {
             network_off: flag("security.network_off"),
             code_enabled: flag("security.code_enabled"),
             auto_web: flag("security.auto_web"),
+            auto_files: flag("security.auto_files"),
         }
     }
 
@@ -501,6 +506,7 @@ impl Ledger {
         self.kv_set("security.network_off", b(s.network_off))?;
         self.kv_set("security.code_enabled", b(s.code_enabled))?;
         self.kv_set("security.auto_web", b(s.auto_web))?;
+        self.kv_set("security.auto_files", b(s.auto_files))?;
         Ok(())
     }
 

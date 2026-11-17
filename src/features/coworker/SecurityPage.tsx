@@ -60,7 +60,8 @@ export function SecurityPage({ onOpenChat }: { onOpenChat: () => void }) {
     }
   };
   const set = (patch: Partial<SecurityStatus>) =>
-    sec && act(() => cw.setSecurity({ paused: sec.paused, network_off: sec.network_off, code_enabled: sec.code_enabled, auto_web: sec.auto_web, ...patch }));
+    sec && act(() => cw.setSecurity({ paused: sec.paused, network_off: sec.network_off, code_enabled: sec.code_enabled, auto_web: sec.auto_web, auto_files: sec.auto_files, ...patch }));
+  const level = !sec ? "" : sec.auto_files && sec.auto_web ? "free" : sec.auto_web ? "research" : "ask";
 
   const approvals = pending.filter((p) => p.kind === "approval");
 
@@ -79,13 +80,32 @@ export function SecurityPage({ onOpenChat }: { onOpenChat: () => void }) {
 
         {sec && (
           <section aria-labelledby="sw-h" className="space-y-2">
-            <h2 id="sw-h" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Switches</h2>
+            <h2 id="sw-h" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">How much Sahayogi does on its own</h2>
+            <div role="radiogroup" aria-label="Autonomy" className="grid gap-2 sm:grid-cols-3">
+              {([
+                ["ask", "Ask first", "Asks before web research and before saving files.", { auto_web: false, auto_files: false }],
+                ["research", "Research freely", "Searches and reads the web on its own; asks before saving files.", { auto_web: true, auto_files: false }],
+                ["free", "Work freely", "Researches and saves or organizes files in your shared folders on its own (backups kept, nothing deleted).", { auto_web: true, auto_files: true }],
+              ] as const).map(([id, title, text, patch]) => (
+                <button
+                  key={id}
+                  role="radio"
+                  aria-checked={level === id}
+                  disabled={sec.network_off && id !== "ask"}
+                  onClick={() => void set(patch)}
+                  className={`rounded-xl border p-3 text-left shadow-card transition-colors disabled:opacity-50 ${level === id ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-accent"}`}
+                >
+                  <span className="block text-[13px] font-semibold">{title}</span>
+                  <span className="mt-1 block text-[11.5px] leading-snug text-muted">{text}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-[11.5px] text-muted">In every mode, these always ask you: anything outside your Mac (posting, sending, paying), connected apps, running code, and saving automations. Files outside your shared folders and password files are never touched.</p>
+            <h2 className="pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Switches</h2>
             <Switch icon={<Hand size={17} aria-hidden />} danger title={sec.paused ? "Sahayogi is paused" : "Pause Sahayogi"} on={sec.paused} onChange={(v) => void set({ paused: v })}
               text="Every tool call is refused, even reading your folders. Chats can still answer from what they already know." />
             <Switch icon={<Globe size={17} aria-hidden />} title="Allow internet tools" on={!sec.network_off} onChange={(v) => void set({ network_off: !v })}
               text="Web search, web pages, GitHub and connected apps. When off, nothing Sahayogi does leaves your Mac except your chat with the AI model." />
-            <Switch icon={<Globe size={17} aria-hidden />} title="Research the web without asking" on={sec.auto_web} disabled={sec.network_off} onChange={(v) => void set({ auto_web: v })}
-              text="Web search, reading public pages and public GitHub run automatically in every chat and task, and are still logged. Saving files, running code, connected apps and anything outside your Mac keep asking. (Tasks can also allow this just for themselves.)" />
             <Switch icon={<Cpu size={17} aria-hidden />} title="Run code in the sandbox" on={sec.code_enabled} disabled={!sec.sandbox_available} onChange={(v) => void set({ code_enabled: v })}
               text={sec.sandbox_available
                 ? <>Lets Prabidhi run short programs in a macOS sandbox with no internet and no access to your files or apps. You approve every run. Found: {[sec.python && "Python", sec.javascript && "JavaScript", "shell"].filter(Boolean).join(", ")}.</>

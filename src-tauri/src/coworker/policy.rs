@@ -68,6 +68,9 @@ const HARD_FLOOR_WORDS: &[&str] = &[
     "sudo",
 ];
 
+/// File tools that "Work freely" lets run without asking.
+const FILE_WRITES: &[&str] = &["files.create", "files.move", "documents.create"];
+
 pub fn evaluate(tool: &str, args: &Value, cx: &Context) -> Decision {
     let name = tool.to_ascii_lowercase();
     let short = name.rsplit('.').next().unwrap_or(&name);
@@ -180,6 +183,9 @@ pub fn evaluate(tool: &str, args: &Value, cx: &Context) -> Decision {
                         Ok(_) => {}
                         Err(e) => return deny(&e.to_string()),
                     }
+                }
+                if cx.security.auto_files && FILE_WRITES.contains(&spec.name) {
+                    return allow("Saves inside a folder you shared; you chose \"Work freely\". Existing files are backed up; nothing is deleted.");
                 }
                 Decision::Ask {
                     reason: "Changes files inside a granted folder. An existing file is backed up first; nothing is deleted.".into(),
@@ -829,6 +835,84 @@ mod tests {
         assert!(matches!(
             eval("browser.search", json!({"query": "x"}), off),
             Decision::Deny { .. }
+        ));
+    }
+
+    #[test]
+    fn work_freely_saves_inside_shared_folders_only() {
+        let d = tempfile::tempdir().unwrap();
+        let g = d.path().canonicalize().unwrap();
+        let roots = vec![g.clone()];
+        let h = HashMap::new();
+        let free = crate::coworker::ledger::Security {
+            auto_files: true,
+            auto_web: true,
+            ..Default::default()
+        };
+        let eval = |t: &str, a: Value| {
+            evaluate(
+                t,
+                &a,
+                &Context {
+                    roots: &roots,
+                    hints: &h,
+                    automation: &|_| None,
+                    security: &free,
+                },
+            )
+        };
+        assert!(matches!(
+            eval("files.create", json!({"path": g.join("a.md"), "content": "x"})),
+            Decision::Allow { .. }
+        ));
+        assert!(matches!(
+            eval(
+                "documents.create",
+                json!({"path": g.join("r.md"), "title": "t", "sections": []})
+            ),
+            Decision::Allow { .. }
+        ));
+        // Outside shared folders and protected files are still refused.
+        assert!(matches!(
+            eval("files.create", json!({"path": "/tmp/x.md", "content": "x"})),
+            Decision::Deny { .. }
+        ));
+        assert!(matches!(
+            eval("files.create", json!({"path": g.join(".env"), "content": "x"})),
+            Decision::Deny { .. }
+        ));
+        // Code, saving automations and connected apps still ask or are refused.
+        assert!(!matches!(
+            eval("code.run", json!({"language": "python", "code": "1"})),
+            Decision::Allow { .. }
+        ));
+        assert!(matches!(
+            eval(
+                "automation.create",
+                json!({"name": "ab", "description": "d", "steps": [{"tool": "files.list", "args": {"path": g}}]})
+            ),
+            Decision::Ask { .. }
+        ));
+        let mut hh = HashMap::new();
+        hh.insert(
+            "apps.fb_post".to_string(),
+            ToolHints {
+                read_only: false,
+                destructive: false,
+            },
+        );
+        assert!(matches!(
+            evaluate(
+                "apps.fb_post",
+                &json!({}),
+                &Context {
+                    roots: &roots,
+                    hints: &hh,
+                    automation: &|_| None,
+                    security: &free
+                }
+            ),
+            Decision::Ask { .. }
         ));
     }
 }

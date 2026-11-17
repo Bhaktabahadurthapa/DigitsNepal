@@ -8,7 +8,7 @@ export interface Specialist { key: string; name: string; nepali: string; summary
 export interface McpTool { name: string; description: string; input_schema: unknown; read_only: boolean; destructive: boolean }
 export interface McpServer { name: string; url: string; tools: McpTool[]; enabled: string[]; created_at: number }
 export interface Automation { id: number; name: string; description: string; steps: { tool: string; args: Record<string, unknown>; note?: string }[]; created_at: number; last_run_at: number | null; runs: number }
-export interface Security { paused: boolean; network_off: boolean; code_enabled: boolean; auto_web: boolean }
+export interface Security { paused: boolean; network_off: boolean; code_enabled: boolean; auto_web: boolean; auto_files: boolean }
 export interface SecurityStatus extends Security { sandbox_available: boolean; python: string | null; javascript: string | null }
 export interface Standing { session: string; tool: string; created_at: number; title: string }
 export interface PendingItem { id: string; session: string; kind: string; tool: string; preview: unknown; reason: string; standing_ok: boolean; hard_floor: boolean; created_at: number; live: boolean }

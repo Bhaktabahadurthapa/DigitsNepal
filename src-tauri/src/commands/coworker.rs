@@ -485,6 +485,7 @@ pub fn coworker_set_security(switches: crate::coworker::ledger::Security, cw: St
         ("network_off", before.network_off, switches.network_off),
         ("code_enabled", before.code_enabled, switches.code_enabled),
         ("auto_web", before.auto_web, switches.auto_web),
+        ("auto_files", before.auto_files, switches.auto_files),
     ] {
         if old != new {
             cw.0.ledger

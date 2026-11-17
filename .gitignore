@@ -12,3 +12,7 @@ src-tauri/gen/schemas/
 eval-reports/
 !pwa/.env.production
 src-tauri/binaries/
+
+# Personal Claude Code settings
+.claude/settings.local.json
+.claude/launch.json
