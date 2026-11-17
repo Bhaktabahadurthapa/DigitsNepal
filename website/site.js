@@ -13,16 +13,6 @@
   );
   document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
 
-  // Copy buttons (e.g. SHA-256 on the download page)
-  document.querySelectorAll("[data-copy]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      const el = document.querySelector(b.dataset.copy);
-      try { await navigator.clipboard.writeText(el.textContent.trim()); b.textContent = "Copied"; }
-      catch { b.textContent = "Select & copy"; }
-      setTimeout(() => (b.textContent = "Copy"), 1600);
-    }),
-  );
-
   // Illustrative examples (hand-written). [romanized, devanagari, gloss, isEnglishTerm]
   const EXAMPLES = [
     {

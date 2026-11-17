@@ -2,7 +2,6 @@
 /** @var array $release */
 $dmg = $release['dmg'];
 $ver = ltrim($release['tag'], 'v');
-$sha = release_sha256($release);
 ?>
 <section class="page-head">
   <div class="wrap">
@@ -23,13 +22,9 @@ $sha = release_sha256($release);
     </header>
     <a class="btn btn-ink btn-lg" href="<?= e($dmg['url']) ?>">Download .dmg <span class="btn-meta"><?= e(human_size($dmg['size'])) ?></span></a>
     <dl class="facts">
-      <div><dt>File</dt><dd><code><?= e($dmg['name']) ?></code></dd></div>
+      <div><dt>File</dt><dd><?= e($dmg['name']) ?></dd></div>
       <div><dt>For</dt><dd>Apple Silicon Macs · macOS 12 Monterey or later</dd></div>
-      <?php if ($sha): ?>
-      <div><dt>SHA-256</dt><dd class="sha"><code id="sha"><?= e($sha) ?></code> <button type="button" class="copy" data-copy="#sha">Copy</button></dd></div>
-      <?php endif; ?>
     </dl>
-    <p class="verify">Optional check: run <code>shasum -a 256 ~/Downloads/<?= e($dmg['name']) ?></code> in Terminal. If it prints the same SHA-256 as above, your download is complete and unchanged.</p>
   </article>
 
   <aside class="side-notes rise" style="--d:4">

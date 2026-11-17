@@ -23,8 +23,6 @@ const RELEASE_FALLBACK = [
         'size' => 2774569,
         'url' => 'https://github.com/Bhaktabahadurthapa/DigitsNepal/releases/download/v0.1.0/DigitsNepal-0.1.0-AppleSilicon.dmg',
     ],
-    'sha256_url' => 'https://github.com/Bhaktabahadurthapa/DigitsNepal/releases/download/v0.1.0/DigitsNepal-0.1.0-AppleSilicon.dmg.sha256',
-    'sha256' => '77697fae18ae94e58485a75cd818275bb3ba5fe98b1669be805252ec06d43357',
     'downloads' => 0,
 ];
 
@@ -91,14 +89,11 @@ function cache_write(string $name, $data): void
 function normalise_release(array $r): array
 {
     $dmg = null;
-    $shaUrl = null;
     $downloads = 0;
     foreach ($r['assets'] ?? [] as $a) {
         $downloads += (int) ($a['download_count'] ?? 0);
         $name = (string) ($a['name'] ?? '');
-        if ($shaUrl === null && preg_match('/\.dmg\.sha256$/i', $name)) {
-            $shaUrl = (string) $a['browser_download_url'];
-        } elseif (preg_match('/\.dmg$/i', $name)) {
+        if (preg_match('/\.dmg$/i', $name)) {
             $isArm = (bool) preg_match('/apple ?silicon|aarch64|arm64/i', $name);
             if ($dmg === null || ($isArm && empty($dmg['arm']))) {
                 $dmg = ['name' => $name, 'size' => (int) ($a['size'] ?? 0), 'url' => (string) $a['browser_download_url'], 'arm' => $isArm];
@@ -113,8 +108,6 @@ function normalise_release(array $r): array
         'notes' => (string) ($r['body'] ?? ''),
         'prerelease' => !empty($r['prerelease']),
         'dmg' => $dmg,
-        'sha256_url' => $shaUrl,
-        'sha256' => null,
         'downloads' => $downloads,
     ];
 }
@@ -163,25 +156,3 @@ function latest_release(): array
     return RELEASE_FALLBACK;
 }
 
-/** SHA-256 for a release's DMG, read from its published .sha256 asset (cached forever per tag). */
-function release_sha256(array $r): ?string
-{
-    if (!empty($r['sha256'])) {
-        return $r['sha256'];
-    }
-    if (empty($r['sha256_url']) || $r['tag'] === '') {
-        return null;
-    }
-    $key = 'sha-' . preg_replace('/[^A-Za-z0-9._-]/', '_', $r['tag']) . '.json';
-    $cached = cache_read($key, PHP_INT_MAX);
-    if (is_string($cached['data'])) {
-        return $cached['data'];
-    }
-    $body = http_get($r['sha256_url'], false);
-    if ($body !== null && preg_match('/\b([a-f0-9]{64})\b/i', $body, $m)) {
-        $sha = strtolower($m[1]);
-        cache_write($key, $sha);
-        return $sha;
-    }
-    return null;
-}
