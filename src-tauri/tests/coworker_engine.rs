@@ -1492,3 +1492,37 @@ async fn a_task_with_web_research_allowed_runs_without_asking_and_completes() {
     );
     r.cw.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn resume_while_a_question_is_open_does_not_break_the_task() {
+    let script: Script = Arc::new(|req| match tool_results(req).len() {
+        0 => Reply::Tool {
+            name_suffix: "task__plan",
+            args: json!({"summary": "Write a post", "missing_info": ["Which page?"], "steps": [{"title": "Draft"}]}),
+        },
+        1 => Reply::Tool {
+            name_suffix: "ask_user",
+            args: json!({"question": "Which page should the post be about?", "options": ["Kinviva", "Other"]}),
+        },
+        2 => Reply::Tool {
+            name_suffix: "task__complete",
+            args: json!({"outcome": "completed", "summary": "Draft ready."}),
+        },
+        _ => Reply::Text("Draft ready.".into()),
+    });
+    let Some(r) = rig(script, None).await else { return };
+    let t =
+        r.cw.create_task(&r.spec, "Kinviva ko barema post lekhdeu", Some("general"), false)
+            .await
+            .unwrap();
+    let q = wait_for(&r.events, |v| v["type"] == "question").await;
+    wait_state(&r, &t.id, "NEEDS_CLARIFICATION").await;
+    // Pressing Resume (or sending another message) while it waits is refused politely.
+    let e = r.cw.resume_task(&t.id, &r.spec).await.unwrap_err().to_string();
+    assert!(e.contains("waiting for you"), "{e}");
+    assert!(r.cw.send(&t.session, "hurry", &r.spec).await.is_err());
+    assert_eq!(task_state(&r, &t.id), "NEEDS_CLARIFICATION", "the task is not broken");
+    assert!(r.cw.answer(q["id"].as_str().unwrap(), "Kinviva"));
+    wait_state(&r, &t.id, "COMPLETED").await;
+    r.cw.shutdown().await;
+}

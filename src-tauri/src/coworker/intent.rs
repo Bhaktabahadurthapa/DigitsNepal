@@ -89,7 +89,22 @@ const CATEGORIES: &[(&str, &[&str], &[&str])] = &[
     ),
     (
         "housing",
-        &["ghar", "kotha", "flat", "apartment", "rent", "rental", "bhada", "bahal", "hostel", "घर", "कोठा", "फ्ल्याट", "भाडा", "बहाल"],
+        &[
+            "ghar",
+            "kotha",
+            "flat",
+            "apartment",
+            "rent",
+            "rental",
+            "bhada",
+            "bahal",
+            "hostel",
+            "घर",
+            "कोठा",
+            "फ्ल्याट",
+            "भाडा",
+            "बहाल",
+        ],
         &["room", "basna", "बस्न"],
     ),
     (

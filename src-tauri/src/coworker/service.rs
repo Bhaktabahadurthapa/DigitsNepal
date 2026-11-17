@@ -78,6 +78,8 @@ pub struct Coworker {
     /// Turns currently being driven (the engine is only reloaded when idle).
     active: std::sync::atomic::AtomicUsize,
     recovered: std::sync::atomic::AtomicBool,
+    /// Sessions with a turn in progress (one run per conversation at a time).
+    running: Mutex<HashSet<String>>,
 }
 
 #[derive(Debug)]
@@ -134,6 +136,7 @@ impl Coworker {
             translator: Arc::new(RwLock::new(None)),
             active: std::sync::atomic::AtomicUsize::new(0),
             recovered: std::sync::atomic::AtomicBool::new(false),
+            running: Mutex::new(HashSet::new()),
         })
     }
 
@@ -278,6 +281,10 @@ impl Coworker {
             "error" => Some(TaskSignal::Error(payload["message"].as_str().unwrap_or("").to_string())),
             _ => None,
         };
+        if matches!(kind, "done" | "cancelled" | "error") {
+            // The turn is over: the conversation accepts the next message.
+            self.running.lock().unwrap().remove(session);
+        }
         payload["session"] = json!(session);
         payload["type"] = json!(kind);
         (self.sink)(payload);
@@ -421,6 +428,14 @@ impl Coworker {
     /// Resume a paused, blocked or interrupted task.
     pub async fn resume_task(self: &Arc<Self>, id: &str, spec: &ProviderSpec) -> Result<(), CoworkerError> {
         let t = self.task_or_err(id)?;
+        if self.waiting_for_user(&t.session) {
+            return Err(CoworkerError::Setup(
+                "This task is waiting for you: answer it under \"Needs you\".".into(),
+            ));
+        }
+        if self.running.lock().unwrap().contains(&t.session) {
+            return Err(CoworkerError::Setup("This task is still working.".into()));
+        }
         self.ledger.set_task_paused(id, false).ok();
         if self.resume_pending(&t.session, spec).await? {
             super::tasks::transition(&self.ledger, &t, super::tasks::TaskState::Running, "Resumed");
@@ -799,7 +814,23 @@ impl Coworker {
         if text.is_empty() {
             return Ok(());
         }
-        let session = self.session(session_id, spec).await?;
+        if self.waiting_for_user(session_id) {
+            return Err(CoworkerError::Setup(
+                "Sahayogi is waiting for you in this conversation. Answer its question or approval first.".into(),
+            ));
+        }
+        if !self.running.lock().unwrap().insert(session_id.to_string()) {
+            return Err(CoworkerError::Setup(
+                "Sahayogi is still working on this. Wait for it to finish, or press Stop.".into(),
+            ));
+        }
+        let session = match self.session(session_id, spec).await {
+            Ok(s) => s,
+            Err(e) => {
+                self.running.lock().unwrap().remove(session_id);
+                return Err(e);
+            }
+        };
         self.ledger.add_message(session_id, "user", text).ok();
         if let Some(mut row) = self
             .ledger
@@ -840,6 +871,7 @@ impl Coworker {
                         .ok();
                 }
             }
+            me.running.lock().unwrap().remove(&sid);
             me.emit(&sid, "status", json!({"state": "idle"}));
         });
         Ok(())
@@ -860,7 +892,16 @@ impl Coworker {
         }) {
             return Ok(false); // already waiting in this process
         }
-        let session = self.session(session_id, spec).await?;
+        if !self.running.lock().unwrap().insert(session_id.to_string()) {
+            return Ok(false);
+        }
+        let session = match self.session(session_id, spec).await {
+            Ok(s) => s,
+            Err(e) => {
+                self.running.lock().unwrap().remove(session_id);
+                return Err(e);
+            }
+        };
         let me = self.clone();
         let sid = session_id.to_string();
         tokio::spawn(async move {
@@ -868,6 +909,7 @@ impl Coworker {
             if let Err(e) = me.drive(&sid, &session, None).await {
                 me.emit(&sid, "error", json!({"message": e.to_string()}));
             }
+            me.running.lock().unwrap().remove(&sid);
             me.emit(&sid, "status", json!({"state": "idle"}));
         });
         Ok(true)
@@ -1178,6 +1220,13 @@ impl Coworker {
             self.cancel(id).await;
         }
         ids.len()
+    }
+
+    /// An approval or question in this conversation is waiting in this launch.
+    fn waiting_for_user(&self, session_id: &str) -> bool {
+        self.pending.lock().unwrap().values().any(|p| match p {
+            Pending::Approval { session, .. } | Pending::Question { session, .. } => session == session_id,
+        })
     }
 
     /// Whether an open approval can be answered right now (its chat is
