@@ -94,7 +94,11 @@ impl TaskState {
             WaitingForApproval => matches!(to, Running | Blocked | Failed | Cancelled),
             WaitingForExternalResponse => matches!(to, Running | Blocked | Failed | Cancelled),
             Retrying => matches!(to, Running | Planning | Blocked | Failed | Cancelled),
-            Blocked => matches!(to, Running | Planning | NeedsClarification | Cancelled | Failed),
+            // A corrected, verified result may finish a blocked task.
+            Blocked => matches!(
+                to,
+                Running | Planning | NeedsClarification | Completed | Cancelled | Failed
+            ),
             Failed => matches!(to, Retrying | Cancelled),
             Completed | Cancelled => false,
         }
@@ -136,6 +140,18 @@ pub struct Playbook {
 }
 
 pub const PLAYBOOKS: &[Playbook] = &[
+    Playbook {
+        key: "housing",
+        title: "Find a place to rent",
+        specialist: "general",
+        steps: &[
+            "Confirm area, type (room, flat, house), budget per month and move-in date (ask only for what is missing).",
+            "Search listing sites for that area (browser.search) and open the 3–5 most relevant listing pages (browser.open).",
+            "Compare rent, size, location and contact details with research.summarize; cite every listing; mark prices you could not confirm and listings that look old.",
+            "Recommend the best options within the budget, with a short message the user can send to the owner or agent.",
+        ],
+        stop_at: "Stop at the shortlist and the prepared message. DigitsNepal cannot contact owners, visit, sign or pay: list those as next steps. Never invent listings or prices.",
+    },
     Playbook {
         key: "local_service",
         title: "Find and arrange a local service",
@@ -238,7 +254,7 @@ pub fn check_plan(args: &Value, hints: &IntentHints) -> Result<(Value, Vec<Strin
         }
         out_steps.push(json!({
             "title": title.chars().take(200).collect::<String>(),
-            "tool": s["tool"].as_str().unwrap_or(""),
+            "tool": s["tool"].as_str().map(normalize_tool).unwrap_or_default(),
             "needs_approval": s["needs_approval"].as_bool().unwrap_or(false),
             "status": "pending",
             "note": "",
@@ -319,6 +335,18 @@ pub fn update_step(plan: &mut Value, args: &Value) -> Result<(), String> {
     Ok(())
 }
 
+/// Accept both the qualified name (`files.read`) and the model-facing alias
+/// (`files__read`).
+pub fn normalize_tool(name: &str) -> String {
+    let n = name.trim();
+    let dotted = if n.contains('.') {
+        n.to_string()
+    } else {
+        n.replacen("__", ".", 1)
+    };
+    super::tools::canonical(&dotted).to_string()
+}
+
 /// Actions DigitsNepal can never have performed (no tools exist for them).
 const UNSUPPORTED: &[&str] = &[
     "book", "purchase", "buy", "pay", "send", "submit", "email", "call", "order", "transfer",
@@ -330,7 +358,7 @@ pub fn verify_claims(ledger: &Ledger, session: &str, claims: &[Value]) -> Vec<Va
         .iter()
         .take(30)
         .map(|c| {
-            let tool = super::tools::canonical(c["tool"].as_str().unwrap_or("")).to_string();
+            let tool = normalize_tool(c["tool"].as_str().unwrap_or(""));
             let target = c["target"].as_str().unwrap_or("").to_string();
             let (ok, why) = match super::tools::spec(&tool) {
                 None => {
@@ -480,6 +508,11 @@ mod tests {
         let ok: Vec<bool> = v.iter().map(|x| x["verified"].as_bool().unwrap()).collect();
         assert_eq!(ok, vec![true, true, false, false, false]);
         assert!(v[3]["why"].as_str().unwrap().contains("no tool"));
+        // The model-facing alias form is accepted too.
+        let a = verify_claims(&l, "s", &[json!({"tool": "browser__search", "target": "x"})]);
+        assert_eq!(a[0]["verified"], true, "{a:?}");
+        assert_eq!(normalize_tool("documents__create"), "documents.create");
+        assert_eq!(normalize_tool("dn.read_file"), "files.read");
     }
 
     #[test]
@@ -488,6 +521,7 @@ mod tests {
         assert_eq!(playbook("appointment").unwrap().key, "local_service");
         assert_eq!(playbook("shopping").unwrap().key, "supplier_sourcing");
         assert!(playbook("documents").is_none());
+        assert_eq!(playbook("housing").unwrap().key, "housing");
         for p in PLAYBOOKS {
             assert!(p.stop_at.contains("Never"), "{}", p.key);
         }

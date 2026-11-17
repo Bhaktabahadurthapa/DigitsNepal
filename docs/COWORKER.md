@@ -189,8 +189,15 @@ actions it cannot perform). **Start task** creates a durable task:
   was closed; open approvals come back), Cancel, Retry (after a failure).
 - **Repeated writes**: an identical successful write in the same task is not
   performed twice.
-- **Workflows**: local service, job search and supplier deal playbooks; each
-  stops before booking, applying, contacting or paying.
+- **Workflows**: local service, job search, supplier deal and room/flat
+  rental playbooks; each stops before booking, applying, contacting or paying.
+- **Side by side**: with a task open, the right column shows *Needs you*
+  (approvals with Allow once / Allow for this task / Deny, and questions to
+  answer) and *Live activity* from the audit log.
+- **Research the web without asking**: a checkbox when starting a task (on by
+  default; a revocable permission for that task only) and a global switch in
+  Security. It covers only web search, public pages and public GitHub;
+  saving files, code, connected apps and anything outside the Mac still ask.
 
 See `docs/architecture/AUTONOMOUS_AGENT.md` for the gap analysis.
 

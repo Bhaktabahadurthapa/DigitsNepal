@@ -1,23 +1,25 @@
 import { listen } from "@tauri-apps/api/event";
 import {
   AlertTriangle, ArrowUp, Ban, Briefcase, Calendar, Check, CheckCircle2, Circle, CircleDashed, Clock, Coins,
-  ExternalLink, Loader2, MapPin, MessageSquare, Package, Pause, Play, RotateCcw, ShieldCheck, Sparkles, Wrench, X, XCircle,
+  ExternalLink, Globe, Home, Loader2, MapPin, MessageSquare, Package, Pause, Play, RotateCcw, ShieldCheck, Sparkles, Wrench, X, XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, ErrorBanner } from "../../components/ui";
 import { toAppError } from "../../providers/api";
 import type { AppError } from "../../types/translation";
-import { cw, type CoworkerEvent, type PendingItem, type PlanStep, type TaskDetail, type TaskMetrics, type TaskPreview, type TaskRow } from "./api";
+import { cw, type AuditEntry, type CoworkerEvent, type PendingItem, type PlanStep, type TaskDetail, type TaskMetrics, type TaskPreview, type TaskRow } from "./api";
 import { label } from "./CoworkerPage";
 
 const EXAMPLES: { icon: typeof Briefcase; title: string; text: string }[] = [
   { icon: Wrench, title: "Local service", text: "Malai bholi ghar safa garne service chahiyo. Ramro review bhako ra sasto khojera book gardinu." },
   { icon: Briefcase, title: "Job search", text: "Mero CV anusar ramro jagir khojera apply garna help gara." },
   { icon: Package, title: "Supplier deal", text: "Malai restaurant ko lagi affordable packaging supplier khojera best deal arrange gardinu." },
+  { icon: Home, title: "Room or flat", text: "Lalitpur ma 2 BHK flat bhada ma chahiyo, 25 hajar samma." },
 ];
 
 const CATEGORY: Record<string, [string, string]> = {
   job_search: ["जागिर खोजी", "Job search"],
+  housing: ["घर / कोठा भाडा", "Housing"],
   local_service: ["स्थानीय सेवा", "Local service"],
   supplier_sourcing: ["आपूर्तिकर्ता खोजी", "Supplier sourcing"],
   appointment: ["अपोइन्टमेन्ट", "Appointment"],
@@ -113,8 +115,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Detail({ d, pending, onControl, onOpenChat, onDecide }: {
-  d: TaskDetail; pending: PendingItem[]; onControl: (a: "pause" | "resume" | "cancel" | "retry") => void; onOpenChat: () => void; onDecide: (id: string, x: "once" | "deny") => void;
+function Detail({ d, onControl, onOpenChat }: {
+  d: TaskDetail; onControl: (a: "pause" | "resume" | "cancel" | "retry") => void; onOpenChat: () => void;
 }) {
   const t = d.task;
   const steps = t.plan.steps ?? [];
@@ -136,26 +138,6 @@ function Detail({ d, pending, onControl, onOpenChat, onDecide }: {
           <Button onClick={onOpenChat}><MessageSquare size={13} aria-hidden /> Open conversation</Button>
         </div>
       </div>
-
-      {pending.length > 0 && (
-        <Section title="Needs your approval">
-          {pending.map((p) => (
-            <div key={p.id} className="rounded-xl border border-accent bg-surface p-3 shadow-card">
-              <p className="text-[13px] font-semibold">{label(p.tool)}</p>
-              <p className="mt-0.5 whitespace-pre-line text-[12px] text-muted">{p.reason}</p>
-              <pre data-selectable className="mt-2 max-h-48 overflow-auto rounded-lg bg-surface-2 p-2 text-[11px]">{JSON.stringify(p.preview, null, 2)}</pre>
-              <div className="mt-2 flex gap-2">
-                {p.live ? (
-                  <>
-                    <Button variant="primary" onClick={() => onDecide(p.id, "once")}><Check size={13} aria-hidden /> Allow once</Button>
-                    <Button variant="danger" onClick={() => onDecide(p.id, "deny")}><Ban size={13} aria-hidden /> Deny</Button>
-                  </>
-                ) : <Button onClick={() => onControl("resume")}>Resume to answer</Button>}
-              </div>
-            </div>
-          ))}
-        </Section>
-      )}
 
       <Section title={steps.length ? `Plan · ${done} of ${steps.length} done` : "Plan"}>
         {t.plan.summary && <p className="text-[13px]">{t.plan.summary}</p>}
@@ -239,6 +221,73 @@ function Detail({ d, pending, onControl, onOpenChat, onDecide }: {
   );
 }
 
+const ACTIVITY_TEXT: Record<string, string> = { allow: "ran automatically", ask: "asked you", deny: "was blocked", ok: "finished", error: "failed", once: "you allowed once", session: "you allowed for this task" };
+
+function NeedsYou({ items, onDecide, onAnswer, onResume }: {
+  items: PendingItem[]; onDecide: (id: string, x: "once" | "session" | "deny") => void; onAnswer: (id: string, text: string) => void; onResume: () => void;
+}) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  if (items.length === 0) {
+    return <p className="rounded-xl border border-dashed border-line p-3 text-center text-[12px] text-muted">Nothing needs you right now.</p>;
+  }
+  return (
+    <ul className="space-y-2">
+      {items.map((p) => {
+        const q = p.preview as { question?: string; options?: string[] };
+        return (
+          <li key={p.id} className={`fade-in rounded-xl border bg-surface p-3 shadow-card ${p.hard_floor ? "border-warn-text/50" : "border-accent"}`}>
+            {p.kind === "question" ? (
+              <>
+                <p className="text-[13px] font-semibold">{q.question}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">{(q.options ?? []).map((o) => <Button key={o} onClick={() => onAnswer(p.id, o)}>{o}</Button>)}</div>
+                <form className="mt-2 flex gap-1.5" onSubmit={(e) => { e.preventDefault(); if (answers[p.id]?.trim()) onAnswer(p.id, answers[p.id]); }}>
+                  <label htmlFor={`a-${p.id}`} className="sr-only">Your answer</label>
+                  <input id={`a-${p.id}`} value={answers[p.id] ?? ""} onChange={(e) => setAnswers((a) => ({ ...a, [p.id]: e.target.value }))} placeholder="Type your answer" className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 text-[12.5px] outline-none focus:border-accent" />
+                  <Button type="submit" variant="primary">Reply</Button>
+                </form>
+              </>
+            ) : (
+              <>
+                <p className="text-[13px] font-semibold">{label(p.tool)}</p>
+                <p className="mt-0.5 whitespace-pre-line text-[11.5px] text-muted">{p.reason}</p>
+                <pre data-selectable className="mt-1.5 max-h-40 overflow-auto rounded-lg bg-surface-2 p-2 text-[11px]">{JSON.stringify(p.preview, null, 2)}</pre>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {p.live ? (
+                    <>
+                      <Button variant="primary" onClick={() => onDecide(p.id, "once")}><Check size={13} aria-hidden /> Allow once</Button>
+                      {p.standing_ok && <Button onClick={() => onDecide(p.id, "session")}>Allow for this task</Button>}
+                      <Button variant="danger" onClick={() => onDecide(p.id, "deny")}><Ban size={13} aria-hidden /> Deny</Button>
+                    </>
+                  ) : <Button onClick={onResume}>Resume to answer</Button>}
+                </div>
+              </>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function LiveActivity({ entries }: { entries: AuditEntry[] }) {
+  const rows = entries.filter((e) => (e.kind === "tool_run" || e.kind === "tool_call" || e.kind === "approval") && !e.tool.startsWith("task."));
+  if (rows.length === 0) return <p className="text-[12px] text-muted">No actions yet.</p>;
+  return (
+    <ol className="space-y-1.5">
+      {rows.slice(0, 40).map((e) => (
+        <li key={e.seq} className="flex items-start gap-2 text-[12px]">
+          <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${e.decision === "deny" || e.decision === "error" ? "bg-error-text" : e.decision === "ask" ? "bg-warn-text" : e.kind === "tool_run" ? "bg-ok" : "bg-accent"}`} aria-hidden />
+          <span className="min-w-0">
+            <span className="font-medium">{label(e.tool)}</span>{" "}
+            <span className="text-muted">{e.kind === "approval" ? ACTIVITY_TEXT[e.decision] ?? e.decision : e.kind === "tool_run" ? `${ACTIVITY_TEXT[e.decision] ?? e.decision}${e.detail ? ` · ${e.detail}` : ""}` : ACTIVITY_TEXT[e.decision] ?? e.decision}</span>
+            <span className="block text-[10.5px] text-muted">{new Date(e.ts).toLocaleTimeString()}</span>
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export function TasksPage({ onOpenChat }: { onOpenChat: (session: string) => void }) {
   const [text, setText] = useState("");
   const [preview, setPreview] = useState<TaskPreview | null>(null);
@@ -249,6 +298,10 @@ export function TasksPage({ onOpenChat }: { onOpenChat: (session: string) => voi
   const [pending, setPending] = useState<PendingItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<AppError | null>(null);
+  const [activity, setActivity] = useState<AuditEntry[]>([]);
+  const [autoWeb, setAutoWeb] = useState(() => {
+    try { return localStorage.getItem("dn.task.autoWeb") !== "0"; } catch { return true; }
+  });
   const selRef = useRef<string | null>(null);
   selRef.current = selected;
 
@@ -257,7 +310,12 @@ export function TasksPage({ onOpenChat }: { onOpenChat: (session: string) => voi
       setTasks(await cw.tasks());
       setMetrics(await cw.taskMetrics());
       setPending(await cw.pending());
-      if (selRef.current) setDetail(await cw.task(selRef.current));
+      if (selRef.current) {
+        const d = await cw.task(selRef.current);
+        setDetail(d);
+        const a = await cw.activity(800);
+        setActivity(a.entries.filter((e) => e.session === d.task.session));
+      }
     } catch (e) {
       setError(toAppError(e));
     }
@@ -274,9 +332,9 @@ export function TasksPage({ onOpenChat }: { onOpenChat: (session: string) => voi
   }, [refresh]);
 
   useEffect(() => {
-    if (selected) void cw.task(selected).then(setDetail).catch((e) => setError(toAppError(e)));
+    if (selected) void refresh();
     else setDetail(null);
-  }, [selected]);
+  }, [selected, refresh]);
 
   // Offline understanding as the user types (no model call).
   useEffect(() => {
@@ -290,7 +348,7 @@ export function TasksPage({ onOpenChat }: { onOpenChat: (session: string) => voi
     setBusy(true);
     setError(null);
     try {
-      const t = await cw.createTask(text);
+      const t = await cw.createTask(text, autoWeb);
       setText("");
       setSelected(t.id);
       await refresh();
@@ -337,10 +395,14 @@ export function TasksPage({ onOpenChat }: { onOpenChat: (session: string) => voi
                 {busy ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <ArrowUp size={15} strokeWidth={2.4} aria-hidden />} Start task
               </button>
             </div>
+            <label className="mt-2 flex items-center justify-center gap-2 text-[12px] text-muted">
+              <input type="checkbox" className="h-3.5 w-3.5 accent-[var(--accent)]" checked={autoWeb} onChange={(e) => { setAutoWeb(e.target.checked); try { localStorage.setItem("dn.task.autoWeb", e.target.checked ? "1" : "0"); } catch { /* ignore */ } }} />
+              <Globe size={13} aria-hidden /> Research the web without asking for this task <span className="hidden sm:inline">(saving files, code and anything outside your Mac still ask)</span>
+            </label>
             {preview && <Understanding p={preview} />}
           </form>
           {!text && (
-            <div className="mt-4 grid gap-2 text-left sm:grid-cols-3">
+            <div className="mt-4 grid gap-2 text-left sm:grid-cols-2 lg:grid-cols-4">
               {EXAMPLES.map(({ icon: Icon, title, text: t }) => (
                 <button key={title} onClick={() => setText(t)} className="rounded-xl border border-line bg-surface p-3 text-left shadow-card transition-colors hover:border-accent hover:bg-accent-soft">
                   <span className="flex items-center gap-1.5 text-[12px] font-semibold"><Icon size={14} className="text-accent-fg" aria-hidden /> {title}</span>
@@ -372,28 +434,25 @@ export function TasksPage({ onOpenChat }: { onOpenChat: (session: string) => voi
         )}
 
         {tasks.length > 0 && (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] xl:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_minmax(0,20rem)]">
             <section aria-labelledby="my-tasks-h">
               <h2 id="my-tasks-h" className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">My tasks</h2>
               <ul className="space-y-1.5">
                 {tasks.map((t) => {
                   const steps = t.plan.steps ?? [];
-                  const waiting = pending.some((p) => p.session === t.session && p.kind === "approval");
+                  const waiting = pending.some((p) => p.session === t.session);
                   return (
                     <li key={t.id}>
                       <button
                         onClick={() => setSelected(t.id)}
                         aria-current={t.id === selected ? "true" : undefined}
-                        className={`w-full rounded-xl border p-3 text-left shadow-card transition-colors ${t.id === selected ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-accent"}`}
+                        className={`w-full rounded-xl border p-2.5 text-left shadow-card transition-colors ${t.id === selected ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-accent"}`}
                       >
-                        <span className="flex items-start justify-between gap-2">
-                          <span className="line-clamp-2 text-[13px] font-medium">{t.request}</span>
+                        <span className="line-clamp-2 text-[12.5px] font-medium">{t.request}</span>
+                        <span className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
                           <StateBadge state={t.state} />
-                        </span>
-                        <span className="mt-1 flex items-center gap-2 text-[11px] text-muted">
-                          <span className="deva">{CATEGORY[t.intent?.category]?.[0] ?? ""}</span>
-                          {steps.length > 0 && <span>· {steps.filter((s) => s.status === "done").length}/{steps.length} steps</span>}
-                          {waiting && <span className="font-medium text-warn-text">· approval waiting</span>}
+                          {steps.length > 0 && <span>{steps.filter((s) => s.status === "done").length}/{steps.length}</span>}
+                          {waiting && <span className="font-medium text-warn-text">needs you</span>}
                           <span className="ml-auto">{ago(t.updated_at)}</span>
                         </span>
                       </button>
@@ -404,17 +463,35 @@ export function TasksPage({ onOpenChat }: { onOpenChat: (session: string) => voi
             </section>
             <section aria-label="Task details" className="rounded-2xl border border-line bg-surface p-5 shadow-card">
               {detail ? (
-                <Detail
-                  d={detail}
-                  pending={pending.filter((p) => p.session === detail.task.session && p.kind === "approval")}
-                  onControl={(a) => void control(a)}
-                  onOpenChat={() => onOpenChat(detail.task.session)}
-                  onDecide={(id, x) => void cw.decide(id, x).then(refresh)}
-                />
+                <Detail d={detail} onControl={(a) => void control(a)} onOpenChat={() => onOpenChat(detail.task.session)} />
               ) : (
                 <p className="py-10 text-center text-[13px] text-muted">Choose a task to see its plan, progress and result.</p>
               )}
             </section>
+            {detail && (
+              <aside aria-label="Needs you and live activity" className="space-y-4 lg:col-start-2 xl:sticky xl:top-4 xl:col-start-auto">
+                <section aria-labelledby="needs-h" className="rounded-2xl border border-line bg-surface p-4 shadow-card">
+                  <h2 id="needs-h" className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold">
+                    <ShieldCheck size={14} className="text-accent-fg" aria-hidden /> Needs you
+                    {pending.filter((p) => p.session === detail.task.session).length > 0 && (
+                      <span className="ml-auto rounded-full bg-warn-bg px-1.5 text-[11px] text-warn-text">{pending.filter((p) => p.session === detail.task.session).length}</span>
+                    )}
+                  </h2>
+                  <NeedsYou
+                    items={pending.filter((p) => p.session === detail.task.session)}
+                    onDecide={(id, x) => void cw.decide(id, x).then(refresh)}
+                    onAnswer={(id, a) => void cw.answer(id, a).then(refresh)}
+                    onResume={() => void control("resume")}
+                  />
+                </section>
+                <section aria-labelledby="live-h" className="rounded-2xl border border-line bg-surface p-4 shadow-card">
+                  <h2 id="live-h" className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold">
+                    {ACTIVE.includes(detail.task.state) ? <Loader2 size={13} className="animate-spin text-accent-fg" aria-hidden /> : <Clock size={13} className="text-muted" aria-hidden />} Live activity
+                  </h2>
+                  <LiveActivity entries={activity} />
+                </section>
+              </aside>
+            )}
           </div>
         )}
       </div>

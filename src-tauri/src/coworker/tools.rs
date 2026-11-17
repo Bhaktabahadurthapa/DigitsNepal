@@ -346,6 +346,9 @@ pub struct Deps {
     pub session: String,
 }
 
+/// Network tools that only read public information (never write or send).
+pub const READ_ONLY_WEB: &[&str] = &["browser.search", "browser.open", "github.search", "github.inspect"];
+
 /// The user's global switches, checked again when a tool actually runs.
 pub fn blocked_by_security(ledger: &Ledger, risk: Risk) -> Option<String> {
     let s = ledger.security();

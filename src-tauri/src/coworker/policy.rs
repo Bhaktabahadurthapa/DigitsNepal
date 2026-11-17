@@ -187,6 +187,9 @@ pub fn evaluate(tool: &str, args: &Value, cx: &Context) -> Decision {
                     hard_floor: false,
                 }
             }
+            Risk::Egress if cx.security.auto_web && super::tools::READ_ONLY_WEB.contains(&spec.name) => {
+                allow("Read-only web research; you turned on \"Research the web without asking\".")
+            }
             Risk::Egress => Decision::Ask {
                 reason: "Reaches the internet with text chosen by the assistant.".into(),
                 standing_ok: true,
@@ -757,5 +760,75 @@ mod tests {
                 Decision::Deny { .. }
             ));
         }
+    }
+
+    #[test]
+    fn automatic_web_research_covers_only_read_only_web_tools() {
+        let h = HashMap::new();
+        let sec = crate::coworker::ledger::Security {
+            auto_web: true,
+            ..Default::default()
+        };
+        let eval = |t: &str, a: Value, sec: crate::coworker::ledger::Security| {
+            evaluate(
+                t,
+                &a,
+                &Context {
+                    roots: &[],
+                    hints: &h,
+                    automation: &|_| None,
+                    security: &sec,
+                },
+            )
+        };
+        for t in ["browser.search", "browser.open", "github.search", "github.inspect"] {
+            assert!(
+                matches!(
+                    eval(t, json!({"query": "x", "url": "https://x.org", "repo": "a/b"}), sec),
+                    Decision::Allow { .. }
+                ),
+                "{t}"
+            );
+        }
+        // Writes, connected apps and code still ask or are refused.
+        assert!(matches!(
+            eval(
+                "documents.create",
+                json!({"path": "/tmp/x.md", "title": "t", "sections": []}),
+                sec
+            ),
+            Decision::Deny { .. }
+        ));
+        let mut hh = HashMap::new();
+        hh.insert(
+            "apps.x_find".to_string(),
+            ToolHints {
+                read_only: true,
+                destructive: false,
+            },
+        );
+        assert!(matches!(
+            evaluate(
+                "apps.x_find",
+                &json!({}),
+                &Context {
+                    roots: &[],
+                    hints: &hh,
+                    automation: &|_| None,
+                    security: &sec
+                }
+            ),
+            Decision::Ask { .. }
+        ));
+        // The internet switch still wins.
+        let off = crate::coworker::ledger::Security {
+            auto_web: true,
+            network_off: true,
+            ..Default::default()
+        };
+        assert!(matches!(
+            eval("browser.search", json!({"query": "x"}), off),
+            Decision::Deny { .. }
+        ));
     }
 }

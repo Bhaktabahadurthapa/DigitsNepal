@@ -113,6 +113,10 @@ pub struct Security {
     pub network_off: bool,
     /// `code.run` may be used (still asks each time). Off by default.
     pub code_enabled: bool,
+    /// Read-only web research (search, public pages, public GitHub) runs
+    /// without asking. Off by default; never covers writes or sending.
+    #[serde(default)]
+    pub auto_web: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -487,6 +491,7 @@ impl Ledger {
             paused: flag("security.paused"),
             network_off: flag("security.network_off"),
             code_enabled: flag("security.code_enabled"),
+            auto_web: flag("security.auto_web"),
         }
     }
 
@@ -495,6 +500,7 @@ impl Ledger {
         self.kv_set("security.paused", b(s.paused))?;
         self.kv_set("security.network_off", b(s.network_off))?;
         self.kv_set("security.code_enabled", b(s.code_enabled))?;
+        self.kv_set("security.auto_web", b(s.auto_web))?;
         Ok(())
     }
 

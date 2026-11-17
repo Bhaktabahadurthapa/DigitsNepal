@@ -60,7 +60,7 @@ export function SecurityPage({ onOpenChat }: { onOpenChat: () => void }) {
     }
   };
   const set = (patch: Partial<SecurityStatus>) =>
-    sec && act(() => cw.setSecurity({ paused: sec.paused, network_off: sec.network_off, code_enabled: sec.code_enabled, ...patch }));
+    sec && act(() => cw.setSecurity({ paused: sec.paused, network_off: sec.network_off, code_enabled: sec.code_enabled, auto_web: sec.auto_web, ...patch }));
 
   const approvals = pending.filter((p) => p.kind === "approval");
 
@@ -84,6 +84,8 @@ export function SecurityPage({ onOpenChat }: { onOpenChat: () => void }) {
               text="Every tool call is refused, even reading your folders. Chats can still answer from what they already know." />
             <Switch icon={<Globe size={17} aria-hidden />} title="Allow internet tools" on={!sec.network_off} onChange={(v) => void set({ network_off: !v })}
               text="Web search, web pages, GitHub and connected apps. When off, nothing Sahayogi does leaves your Mac except your chat with the AI model." />
+            <Switch icon={<Globe size={17} aria-hidden />} title="Research the web without asking" on={sec.auto_web} disabled={sec.network_off} onChange={(v) => void set({ auto_web: v })}
+              text="Web search, reading public pages and public GitHub run automatically in every chat and task, and are still logged. Saving files, running code, connected apps and anything outside your Mac keep asking. (Tasks can also allow this just for themselves.)" />
             <Switch icon={<Cpu size={17} aria-hidden />} title="Run code in the sandbox" on={sec.code_enabled} disabled={!sec.sandbox_available} onChange={(v) => void set({ code_enabled: v })}
               text={sec.sandbox_available
                 ? <>Lets Prabidhi run short programs in a macOS sandbox with no internet and no access to your files or apps. You approve every run. Found: {[sec.python && "Python", sec.javascript && "JavaScript", "shell"].filter(Boolean).join(", ")}.</>

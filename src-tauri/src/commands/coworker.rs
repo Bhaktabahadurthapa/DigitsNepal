@@ -334,6 +334,7 @@ pub fn coworker_task_preview(text: String) -> TaskPreview {
 pub async fn coworker_task_create(
     text: String,
     specialist: Option<String>,
+    auto_web: Option<bool>,
     state: State<'_, AppState>,
     cw: State<'_, CoworkerState>,
 ) -> CmdResult<crate::coworker::ledger::TaskRow> {
@@ -341,7 +342,7 @@ pub async fn coworker_task_create(
         return Err(err("too_long", "Please keep a task under 4,000 characters."));
     }
     let spec = spec(&state)?;
-    cw.0.create_task(&spec, &text, specialist.as_deref())
+    cw.0.create_task(&spec, &text, specialist.as_deref(), auto_web.unwrap_or(false))
         .await
         .map_err(|e| err("task", e.to_string()))
 }
@@ -483,6 +484,7 @@ pub fn coworker_set_security(switches: crate::coworker::ledger::Security, cw: St
         ("paused", before.paused, switches.paused),
         ("network_off", before.network_off, switches.network_off),
         ("code_enabled", before.code_enabled, switches.code_enabled),
+        ("auto_web", before.auto_web, switches.auto_web),
     ] {
         if old != new {
             cw.0.ledger

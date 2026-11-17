@@ -88,6 +88,11 @@ const CATEGORIES: &[(&str, &[&str], &[&str])] = &[
         &["deal", "order", "moq"],
     ),
     (
+        "housing",
+        &["ghar", "kotha", "flat", "apartment", "rent", "rental", "bhada", "bahal", "hostel", "घर", "कोठा", "फ्ल्याट", "भाडा", "बहाल"],
+        &["room", "basna", "बस्न"],
+    ),
+    (
         "local_service",
         &[
             "safa",
@@ -109,7 +114,7 @@ const CATEGORIES: &[(&str, &[&str], &[&str])] = &[
             "प्लम्बर",
             "सेवा",
         ],
-        &["service", "sewa", "ghar", "book", "booking"],
+        &["service", "sewa", "book", "booking"],
     ),
     (
         "appointment",

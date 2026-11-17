@@ -1206,6 +1206,7 @@ async fn job_search_task_runs_end_to_end_with_a_verified_result() {
             &r.spec,
             "Mero CV anusar ramro jagir khojera apply garna help gara.",
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1256,7 +1257,7 @@ async fn a_claimed_booking_that_never_happened_blocks_completion() {
     });
     let Some(r) = rig(script, None).await else { return };
     let t =
-        r.cw.create_task(&r.spec, "Malai bholi ghar safa garne service book gardinu", None)
+        r.cw.create_task(&r.spec, "Malai bholi ghar safa garne service book gardinu", None, false)
             .await
             .unwrap();
     wait_state(&r, &t.id, "BLOCKED").await;
@@ -1301,7 +1302,7 @@ async fn a_task_survives_a_restart_mid_approval_and_pause_resume_works() {
     let notes = r.granted.join("notes.md");
     *target.lock().unwrap() = notes.display().to_string();
     let t =
-        r.cw.create_task(&r.spec, "write my notes file", Some("general"))
+        r.cw.create_task(&r.spec, "write my notes file", Some("general"), false)
             .await
             .unwrap();
     wait_for(&r.events, |v| v["type"] == "approval_required").await;
@@ -1401,7 +1402,7 @@ async fn an_update_that_changes_tool_definitions_starts_fresh_engine_state() {
     r.cw.send(&s.id, "hello", &r.spec).await.unwrap();
     wait_for(&r.events, |v| v["type"] == "done").await;
     let t =
-        r.cw.create_task(&r.spec, "write my notes", Some("general"))
+        r.cw.create_task(&r.spec, "write my notes", Some("general"), false)
             .await
             .unwrap();
     wait_state(&r, &t.id, "BLOCKED").await; // stopped before task.complete
@@ -1432,5 +1433,62 @@ async fn an_update_that_changes_tool_definitions_starts_fresh_engine_state() {
         .filter(|e| e.file_name().to_string_lossy().starts_with("state-replaced-"))
         .collect();
     assert_eq!(backups.len(), 1, "previous engine state kept once");
+    r.cw.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_task_with_web_research_allowed_runs_without_asking_and_completes() {
+    let (search, hits) = http_server(Arc::new(|_, _| {
+        (200, "text/html", r#"<a class="result__a" href="https://rent.example.org/ktm">Flats in Kathmandu</a><a class="result__snippet">From Rs 8,000.</a>"#.into())
+    }))
+    .await;
+    let script: Script = Arc::new(|req| match tool_results(req).len() {
+        0 => Reply::Tool {
+            name_suffix: "task__plan",
+            args: json!({"summary": "Find cheap flats in Kathmandu", "steps": [{"title": "Search", "tool": "browser__search"}]}),
+        },
+        1 => Reply::Tool {
+            name_suffix: "browser__search",
+            args: json!({"query": "cheap flat rent Kathmandu"}),
+        },
+        // Claims written with the model-facing alias, as real models do.
+        2 => Reply::Tool {
+            name_suffix: "task__complete",
+            args: json!({"outcome": "completed", "summary": "Flats from Rs 8,000.", "actions": [{"tool": "browser__search", "target": "cheap flat rent Kathmandu"}], "evidence": [{"title": "Flats in Kathmandu", "source": "https://rent.example.org/ktm"}]}),
+        },
+        _ => Reply::Text("Flats from Rs 8,000.".into()),
+    });
+    let web = digitsnepal_lib::coworker::web::WebConfig {
+        search_url: format!("{search}/html/?q={{q}}"),
+        allow_private: true,
+        ..Default::default()
+    };
+    let Some(r) = rig_web(script, None, web).await else {
+        return;
+    };
+    let t =
+        r.cw.create_task(
+            &r.spec,
+            "Malai Kathmandu ma sasto ma ghar chayo, search garera find out gara",
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    wait_state(&r, &t.id, "COMPLETED").await;
+    assert!(
+        !r.events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|v| v["type"] == "approval_required"),
+        "no approval cards"
+    );
+    assert!(hits.load(std::sync::atomic::Ordering::SeqCst) >= 1);
+    assert_eq!(r.cw.ledger.task(&t.id).unwrap().result["verified"], true);
+    assert!(
+        r.cw.ledger.has_standing(&t.session, "browser.open"),
+        "listed and revocable in Security"
+    );
     r.cw.shutdown().await;
 }

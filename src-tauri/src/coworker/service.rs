@@ -340,6 +340,7 @@ impl Coworker {
         spec: &ProviderSpec,
         request: &str,
         specialist: Option<&str>,
+        auto_web: bool,
     ) -> Result<super::ledger::TaskRow, CoworkerError> {
         let request = request.trim();
         if request.is_empty() {
@@ -378,6 +379,24 @@ impl Coworker {
         self.ledger
             .record(&task.session, "user", "task", "", &json!(request), "created", &task.id)
             .ok();
+        if auto_web {
+            // "Research the web without asking" for this task only: standing,
+            // revocable permissions for the read-only web tools.
+            for t in super::tools::READ_ONLY_WEB {
+                self.ledger.add_standing(&task.session, t).ok();
+            }
+            self.ledger
+                .record(
+                    &task.session,
+                    "user",
+                    "standing_approval",
+                    "web research",
+                    &Value::Null,
+                    "granted",
+                    "for this task",
+                )
+                .ok();
+        }
         super::tasks::transition(&self.ledger, &task, super::tasks::TaskState::Planning, "Planning");
         self.send(&task.session, &super::tasks::start_message(&task, &hints), spec)
             .await?;
